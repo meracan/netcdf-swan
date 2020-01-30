@@ -1,0 +1,5 @@
+pandas
+pytest
+tqdm
+regex
+netCDF4

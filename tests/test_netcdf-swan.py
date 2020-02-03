@@ -1,8 +1,32 @@
 #!/usr/bin/env python3
+
+"""
+    swan data -> node map -> netcdf -> s3 object -> deploy
+    may shortcut some steps above (swan data -> netcdf)
+
+    1. Searches for XYZ and mesh files in the path directory specified by the user (no arguments or '.'
+      means search current directory) and creates a temporary node map.
+      should use that location as a reference.
+    Arguments after that are date and time coordinates, to search a specific month of a particular year
+      for the 'results' folder, e.g.   $ python3 netcdf-swan.py . 2004 01
+      will find the 'results' data folder in January of 2004, in the current directory.
+
+    If a year and month are specified, will search the results folder just in that month.
+    Otherwise, will look in the results folder for each month of the year if only that year is specified,
+    otherwise ALL results folders will be searched.
+
+    2. Reads all .mat files in the results folder and stores them as node data.
+    3. Creates and writes a netcdf file (.nc) with the node data
+
+    4. read node data from nc file (for testing)
+    5. plot ?
+
+
+"""
 import sys, os
 import re
 from createnodes import NodeMap
-from createnetcdf import createNetCDF, writeNetCDF, printNetCDF
+from createnetcdf import create_netcdf, write_netcdf_static, write_netcdf_temporal, print_netcdf
 
 TEST_FILE_PATH = "../output/test.nc"
 MESH_FOLDER = "../data/Mesh"

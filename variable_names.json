@@ -1,0 +1,134 @@
+{
+	"u": { 
+		"units": "m/s", 
+		"standard name": "u velocity", 
+		"long name": "u current velocity", 
+		"matfile name": "" 
+	}, 
+	"v": {
+		"units": "m/s", 
+		"standard name": "v velocity", 
+    "long name": "v current velocity", 
+		"matfile name": ""
+  },
+  "d": {
+    "units": "m", 
+    "standard name": "depth", 
+    "long name": "water depth, in m (not the bottom level!)",
+		"matfile name": ""
+  },
+  "h": {
+    "units": "m", 
+    "standard name": "?Free surface elevation", 
+    "long name": "?Free surface elevation, m",
+		"matfile name": ""
+  },
+  "u10": {
+    "units": "m/s", 
+    "standard name": "u Wind velocity", 
+    "long name": "u Wind velocity, m/s",
+		"matfile name": "WINDX"
+  },
+  "v10": {
+    "units": "m/s", 
+    "standard name": "v Wind velocity", 
+    "long name": "v Wind velocity, m/s",
+		"matfile name": "WINDY"
+  },
+  "hs": {
+    "units": "m", 
+    "standard name": "significant wave height", 
+    "long name": "significant wave height (in s)",
+		"matfile name": "HS"
+  },
+  "tps": {
+    "units": "s", 
+    "standard name": "peak period", 
+    "long name": "smoothed peak period (in s)",
+		"matfile name": "TPS"
+  },
+  "tmm10": {
+    "units": "s", 
+    "standard name": "mean absolute wave period", 
+    "long name": "mean absolute wave period (in s)",
+		"matfile name": ""
+  },
+  "tm01": {
+    "units": "s", 
+    "standard name": "mean absolute wave period", 
+    "long name": "mean absolute wave period (in s)",
+		"matfile name": ""
+  },
+  "tm02": {
+    "units": "s", 
+    "standard name": "mean absolute zero-crossing period", 
+    "long name": "mean absolute zero-crossing period (in s)",
+		"matfile name": ""
+  },
+  "pdir": {
+    "units": "degrees", 
+    "standard name": "peak wave direction", 
+    "long name": "peak wave direction in degrees",
+		"matfile name": ""
+  },
+  "dir": {
+    "units": "", 
+    "standard name": "mean wave direction", 
+    "long name": "mean wave direction (Cartesian or Nautical convention)",
+		"matfile name": ""
+  },
+  "dspr": {
+    "units": "degrees", 
+    "standard name": "directional wave spread", 
+    "long name": "directional spreading of the waves (in degrees)",
+		"matfile name": "DSPR"
+  },
+  "qp": {
+    "units": "", 
+    "standard name": 
+    "peakedness of wave spectrum", "long name": "peakedness of the wave spectrum (dimensionless)",
+		"matfile name": "QP"
+  },
+  "transp": {
+    "units": "m3/s", 
+    "standard name": "transport of energy", 
+    "long name": "transport of energy (in W/m or m3/s)",
+		"matfile name": ""
+  },
+  "pthsign": {
+    "units": "m", 
+    "standard name": "partition of significant wave height", 
+    "long name": "user requests partition of the significant wave height (in m)",
+		"matfile name": ""
+  },
+  "ptrtp": {
+    "units": "s", 
+    "standard name": "partition of relative peak period", 
+    "long name": "user requests partition of the relative peak period (in s)",
+		"matfile name": ""
+  },
+  "ptdspr": {
+    "units": "degrees", 
+    "standard name": "partition of spread direction", 
+    "long name": "user requests partition of the directional spreading (in degrees)",
+		"matfile name": ""
+  },
+  "ptwlen": {
+    "units": "m", 
+    "standard name": "partition of average wave length", 
+    "long name": "user requests partition of the average wave length (in m)",
+		"matfile name": ""
+  },
+  "ptdir": {
+    "units": "degrees", 
+    "standard name": "partition of peak wave direction", 
+    "long name": "user requests partition of the peak wave direction in degrees",
+		"matfile name": ""
+  },
+  "ptsteep": {
+    "units": "", 
+    "standard name": "partition of wave steepness", 
+    "long name": "user requests partition of the wave steepness (dimensionless)",
+		"matfile name": ""
+  }
+}

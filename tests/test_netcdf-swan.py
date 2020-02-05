@@ -105,8 +105,6 @@ def test_main(*args):
 
     print("\n*** Finished ***")
   
-  
-
 
 if __name__ == "__main__":
     args = sys.argv

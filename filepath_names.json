@@ -1,0 +1,6 @@
+{
+  "data": "../data",
+  "output": "../output/test.nc",
+  "mesh": "../data/Mesh",
+  "xyz": "../data/XYZ.mat"
+}

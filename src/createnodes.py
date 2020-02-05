@@ -33,9 +33,9 @@ from netCDF4 import Dataset, num2date, date2num
 
 TQDM = True
 try:
-  from tqdm import tqdm
+    from tqdm import tqdm
 except ModuleNotFoundError:
-  TQDM = False
+    TQDM = False
 
 # regex for possible matlab file names.
 re_matfile = re.compile(
@@ -46,6 +46,7 @@ re_bot = re.compile(r".+[.]bot")
 re_node = re.compile(r".+[.]node")
 re_windx = re.compile(r"Windv_x")
 re_windy = re.compile(r"Windv_y")
+# re_ for other x/y files ?
     
 # temporary files/directories. will need to change.
 # for testing this .py as executable

@@ -4,6 +4,8 @@
     swan data -> node map -> netcdf -> s3 object -> deploy
     may shortcut some steps above (swan data -> netcdf)
 
+    'filepath_names' will have to be changed if script is in server, e.g. 'BCSWANv5' instead of '../Data'
+
     1. Searches for XYZ and mesh files in the path directory specified by the user (no arguments or '.'
       means search current directory) and creates a temporary node map.
       should use that location as a reference.
@@ -24,80 +26,70 @@
 
 """
 import sys, os
-import re
+import json
+import datetime
+from netCDF4 import num2date, date2num
 from createnodes import NodeMap
 from createnetcdf import create_netcdf, write_netcdf_static, write_netcdf_temporal, print_netcdf
 
-TEST_FILE_PATH = "../output/test.nc"
-MESH_FOLDER = "../data/Mesh"
-XYZ = "../data/XYZ.mat"
-TEMP_2004_01_RESULTS = "../data/2004/01/results"
-TEMP_2004_01_RESULTS_WIND = "../data/2004/01/results/WIND.mat"
+with open("../filepath_names.json") as fpnames:
+    names = json.load(fpnames)
 
-# re_year = re.compile(r"20[0-9][0-9]")
-# re_month = re.compile(r"[0-9][0-9]")
+    DATA_FOLDER = names['data']
+    NC_TEST_FILE = names['output']
+    MESH_FOLDER = names['mesh']
+    XYZ = names['xyz']
 
 
 def test_main(*args):
     xyz, mesh = XYZ, MESH_FOLDER
     args = args[0]
-    data_folder, get_year, get_month = ".", "", ""
+    data_folder, get_year, get_month = DATA_FOLDER, "", ""
+
     if len(args) > 1:
-        data_folder = args[1]
-        print(args, args[1])
-    if os.path.isdir(data_folder):
-        for root, dirs, files in os.walk(data_folder):
-            if "XYZ.mat" in files:
-                xyz = os.path.join(root, "XYZ.mat")
-            if "Mesh" in dirs:
-                mesh = os.path.join(root, "Mesh")
+        if args[1] != '.':
+            data_folder = args[1]
+            print(f"(reading from \'{args[1]}\')")
+
     if len(args) > 2:
         get_year = args[2]
     if len(args) > 3:
         get_month = args[3]
-
-    #results = os.path.join(data_folder, year, month, "results")
-
-    #def mat_to_nodes_to_nc(year, month):
+    # if len(args) > 4:
+    if len(args) > 5:
+        date = datetime(int(get_year), int(get_month), int(args[4]), int(args[5]))
+        print(date)
 
     print(f"\n*** Loading node data from Mesh and XYZ ***")
     nm_from_mats = NodeMap()
     nm_from_mats.load_mesh(mesh, xyz)
     nm_from_mats.sort_coords()
 
+    results = ""
+
     if get_year:
-        search = os.path.join(data_folder, get_year)
-        if get_month:
+        if get_month:   # load mat data for one month
             results = os.path.join(data_folder, get_year, get_month, "results")
-            # load mat data for that month of that year
-            nm_from_mats.load_mat(results)
+        else:           # load mat data for all months of one year
+            results = os.path.join(data_folder, get_year)
+        nm_from_mats.load_mat(results)
 
-        else:
-            for month in os.listdir(data_folder+"/"+get_year):
-                # check if actual month folder? re necessary if so
-                results = os.path.join(data_folder, get_year, month, "results")
-                # load mat data from ALL months of that year
-                nm_from_mats.load_mat(results)
-    else:
-        print(data_folder, "\n")
+    else:               # load mat data for ALL months from ALL years
         for year in os.listdir(data_folder):
-            #print(year)
+            # print("Year:", year)
             for month in os.listdir(data_folder+"/"+year):
+                # print(" Month:", month)
                 results = os.path.join(data_folder, year, month, "results")
-                # load mat data for ALL months from ALL years
                 nm_from_mats.load_mat(results)
 
+    print(f"\n*** Creating NetCDF file as \'{NC_TEST_FILE}\' from node map ***")
+    create_netcdf(NC_TEST_FILE, nm_from_mats)
+    write_netcdf_static(NC_TEST_FILE, nm_from_mats, 'day')
+    write_netcdf_temporal(NC_TEST_FILE, nm_from_mats)
 
-    print(f"\n*** Creating NetCDF file as \'{TEST_FILE_PATH}\' ***")
-    create_netcdf(TEST_FILE_PATH, nm_from_mats)
-    write_netcdf_static(TEST_FILE_PATH, nm_from_mats)
-    write_netcdf_temporal(TEST_FILE_PATH, nm_from_mats)
-
-    # mat_to_nodes_to_nc(year, month)
-
-    print(f"\n*** Reading created NetCDF file ***")
+    print(f"\n*** Reading created NetCDF file (from \'{NC_TEST_FILE}\') ***")
     nm = NodeMap()
-    nm.load_nc(TEST_FILE_PATH)
+    nm.load_nc(NC_TEST_FILE)
 
     box = nm.get_node_area_delta(-123.3656, 48.4284, 1.0)
     box2 = nm.get_node_area([-124.3656, 47.4284, -123.3656, 48.4284])

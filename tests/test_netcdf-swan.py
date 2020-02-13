@@ -1,62 +1,67 @@
 #!/usr/bin/env python3
 
 """
-    swan data -> node map -> netcdf -> s3 object -> deploy
-    may shortcut some steps above (swan data -> netcdf)
+    Testing still allows input parameters on the command line so that a year or month can be specified.
 
-    'filepath_names' will have to be changed if script is in server, e.g. 'BCSWANv5' instead of '../Data'
-
-    1. Searches for XYZ and mesh files in the path directory specified by the user (no arguments or '.'
-      means search current directory) and creates a temporary node map.
-      should use that location as a reference.
-    Arguments after that are date and time coordinates, to search a specific month of a particular year
-      for the 'results' folder, e.g.   $ python3 netcdf-swan.py . 2004 01
-      will find the 'results' data folder in January of 2004, in the current directory.
-
-    If a year and month are specified, will search the results folder just in that month.
-    Otherwise, will look in the results folder for each month of the year if only that year is specified,
-    otherwise ALL results folders will be searched.
-
-    2. Reads all .mat files in the results folder and stores them as node data.
-    3. Creates and writes a netcdf file (.nc) with the node data
-
-    4. read node data from nc file (for testing)
-    5. plot ?
-
-
+    TODO
+        change bare except statements (bad habit!)
 """
+
 import sys, os
 import json
 import datetime
+import pprint as pp
 from netCDF4 import num2date, date2num
+from datetime import datetime
 from createnodes import NodeMap
-from createnetcdf import create_netcdf, write_netcdf_static, write_netcdf_temporal, print_netcdf
+from createnetcdf import create_nca_input, update_timesteps
+from s3netcdf import NetCDF2D
+from s3netcdf.netcdf2d_func import NetCDFSummary
 
 with open("../filepath_names.json") as fpnames:
     names = json.load(fpnames)
 
-    DATA_FOLDER = names['data']
-    NC_TEST_FILE = names['output']
-    MESH_FOLDER = names['mesh']
-    XYZ = names['xyz']
+    TEST_SWAN_FOLDER = names['test_data_folder']
+    TEST_MESH_FOLDER = names['test_mesh_folder']
+    TEST_NCA_READ = names['swanv5']
+    NC_FILE_MESH = names['output_nc_mesh']
+    NC_FILE = names['output_nc']
+
+
+with open("../read_master.json") as rm:
+    Input_Read = json.load(rm)
+
+
+with open("../test_variable_names.json") as vnames:
+    TEST_TEMPORAL_VARIABLES = json.load(vnames)
 
 
 def test_main(*args):
-    xyz, mesh = XYZ, MESH_FOLDER
+    """
+
+    :param args: <folder where swan data is> <year> <month> <day> <hour>
+    :return:
+    """
+    # initial test parameters:  $ ../data 2004 01
+    data_folder = TEST_SWAN_FOLDER
+    mesh = TEST_MESH_FOLDER
     args = args[0]
-    data_folder, get_year, get_month = DATA_FOLDER, "", ""
+    get_year, get_month, get_day, get_hour, date = "", "", "", "", ""
 
     if len(args) > 1:
         if args[1] != '.':
             data_folder = args[1]
             print(f"(reading from \'{args[1]}\')")
-
     if len(args) > 2:
         get_year = args[2]
     if len(args) > 3:
         get_month = args[3]
-    # if len(args) > 4:
+    if len(args) > 4:
+        get_day = args[4]
+        date = datetime(int(get_year), int(get_month), int(args[4]))
+        # print("date reference created:", date)
     if len(args) > 5:
+        get_hour = args[5]
         date = datetime(int(get_year), int(get_month), int(args[4]), int(args[5]))
         print(date)
 
@@ -65,8 +70,7 @@ def test_main(*args):
     nm_from_mats.load_mesh(mesh, xyz)
     nm_from_mats.sort_coords()
 
-    results = ""
-
+    # from .mat files
     if get_year:
         if get_month:   # load mat data for one month
             results = os.path.join(data_folder, get_year, get_month, "results")
@@ -76,9 +80,7 @@ def test_main(*args):
 
     else:               # load mat data for ALL months from ALL years
         for year in os.listdir(data_folder):
-            # print("Year:", year)
-            for month in os.listdir(data_folder+"/"+year):
-                # print(" Month:", month)
+            for month in os.listdir(data_folder + "/" + year):
                 results = os.path.join(data_folder, year, month, "results")
                 nm_from_mats.load_mat(results)
 
@@ -109,4 +111,3 @@ def test_main(*args):
 if __name__ == "__main__":
     args = sys.argv
     test_main(args)
-  

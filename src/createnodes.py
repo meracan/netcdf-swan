@@ -3,11 +3,11 @@
     used before creating and loading to netcdf file, as well as for reading from
     a netcdf file to be used for plotting, etc.
 
+
     - read from swan files into memory      <-- this step
     - store node info as netCDF file
     - turn into s3 bucket object and deploy
 
-    load XYZ.mat -- lat, long, depth (positive values?)
       .node file in the mesh will have lat and long information
     load Mesh files -- 
       ele for triangles
@@ -20,8 +20,12 @@
 
     if path is not specified, assumes data is in a folder called 'data'
 
+    1 netcdf for each timestep.
+
+
 """
 import boto3
+import json
 import os, sys
 import pandas as pd
 import numpy as np
@@ -30,6 +34,7 @@ from scipy.io import loadmat
 import matplotlib.pyplot as plt
 from matplotlib.tri import Triangulation
 from netCDF4 import Dataset, num2date, date2num
+from datetime import datetime
 
 TQDM = True
 try:
@@ -38,22 +43,26 @@ except ModuleNotFoundError:
     TQDM = False
 
 # regex for possible matlab file names.
-re_matfile = re.compile(
-    r"(WIND|HS|TPS|TMM10|TM01|TM02|PDIR|DIR|DSPR|QP|TRANSP|PTHSIGN|PTRTP|PTWLEN|PTDIR|PTDSPR|PTSTEEP|XYZ)[.]mat"
-)
+re_mat = re.compile(r"(WIND|HS|TPS|TMM10|TM01|TM02|PDIR|DIR|DSPR|QP|TRANSP)[.]mat")
+re_mat_test = re.compile(r"(WIND_6hr|HS_6hr)[.]mat")  # separate test from actual?
+
 re_ele = re.compile(r".+[.]ele")
 re_bot = re.compile(r".+[.]bot")
 re_node = re.compile(r".+[.]node")
-re_windx = re.compile(r"Windv_x")
-re_windy = re.compile(r"Windv_y")
-# re_ for other x/y files ?
+re_x = re.compile(r"^.*_x_")
+re_y = re.compile(r"^.*_y_")
     
 # temporary files/directories. will need to change.
 # for testing this .py as executable
+with open("../filepath_names.json") as fpnames:
+    names = json.load(fpnames)
+    SWAN_FOLDER = names['data_folder']
+    MESH_FOLDER = names['mesh_folder']
+    NC_FILE_MESH = names['output_nc_mesh']
+    NC_FILE = names['output_nc']
 
-MESH_FOLDER = "./data/Mesh"
-XYZ = "data/XYZ.mat"
-TEMP_FOLDER_2004_01_RESULTS = "data/2004/01/results"
+with open("../variable_names.json") as vnames:
+    TEMPORAL_VARIABLES = json.load(vnames)
 
 
 class NodeMap:
@@ -79,8 +88,7 @@ class NodeMap:
         #print("initializing node map...")
         #self.load_mesh(meshfolder, xyz)
 
-
-    def load_mesh(self, meshfolder, xyz):
+    def load_mesh(self, meshfolder):
         """ loads all mesh data and stores into class object
             assumes mesh folder exists
             (should need to do only once--)
@@ -99,7 +107,6 @@ class NodeMap:
         self.num_nodes, self.node_order, self.lon, self.lat, self.boundary_markers = self.swan_noderead(meshfolder+"/"+mesh_node)
         self.elements = self.swan_eleread(meshfolder+"/"+mesh_ele)
         self.bathymetry = self.swan_botread(meshfolder+"/"+mesh_bot)
-        self.xyz = self.swan_xyzread(xyz)
 
     # For the swan_ methods below, "- 1" turns MATLAB's 1 indexing
     # into Python's 0 indexing
@@ -129,29 +136,21 @@ class NodeMap:
         return z
 
 
-    def swan_xyzread(self, xyzfile):
-        """ .mat file, separate from triangle mesh.
-            info is already in .node and .bot files
-            setting ready_timesteps to True means they can be found
-            in other matfiles (?)
-        """
-        xyz = self.load_mat(xyzfile)
-        self.ready_timesteps = True
-        return xyz
-
-
     def load_mat(self, filename):
-        """ if month folder is given, searches the entire folder.
-            Otherwise, the filename should look like '[...]/results/WIND.mat' or something
+        """ searches the entire folder if month folder is given,
+            otherwise the filename should look like '[...]/results/WIND.mat' or something
 
             header, version and globals are popped for now, might need later?
-            need  'np.squeeze()'  to get rid of nested arrays
-              - assumes data has a limited number of dimensions (e.g. looks like
-                'array([[-22.5, -18.0, -36.7, ...]])' )
-            matfile may have both x and y coordinates for each time step.
-            'xysplit' takes care of that.
-            Strips off the name: if key == 'abcde_20040101_050000',
-              then key[-15:] == '20040101_050000'
+
+            need  'np.squeeze()'  to get rid of nested arrays like 'array([[-22.5, -18.0, -36.7, ...]])'
+
+            matfile has either one dimension or two (x and y coordinates) for each time step.
+
+            name stripping:
+                key == 'abcde_20040101_050000'
+                key[-15:] == '20040101_050000'
+
+            Hsig_20040101_050000 is one column, which should be turned into one .nc file
         """
         folder = ""
         mfiles = [filename]
@@ -237,7 +236,6 @@ class NodeMap:
             ? self.boundary_markers = None
         """
         with Dataset(filename, "r", format="NETCDF4") as nc:
-
             time = nc.variables['time']
             lon, lat = nc.variables['lon'], nc.variables['lat']
             lonsort, latsort = nc.variables['lonsort'], nc.variables['latsort']
@@ -278,7 +276,7 @@ class NodeMap:
             if node area has been specified, use those coordinates instead
         """
         if z is None:
-          z = self.barymetry
+          z = self.bathymetry
 
         tg = Triangulation(x, y, self.elements) # will need to change elements if only a specified region
         plt.figure() # figsize=(10,10))

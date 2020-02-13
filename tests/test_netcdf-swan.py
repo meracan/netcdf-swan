@@ -63,12 +63,36 @@ def test_main(*args):
     if len(args) > 5:
         get_hour = args[5]
         date = datetime(int(get_year), int(get_month), int(args[4]), int(args[5]))
-        print(date)
+        print("date reference created:", date)
 
-    print(f"\n*** Loading node data from Mesh and XYZ ***")
+    print(f"\n*** loading mesh folder into node map ***")
+    nm_mesh = NodeMap()
+    nm_mesh.load_mesh(mesh)
+    num_nodes = nm_mesh.num_nodes
+    num_elements = nm_mesh.num_elements
+
+    Master_Input = None
+    try:
+        # print(" Reading summary of nca in cache...")
+        # pp.pprint(NetCDFSummary(TEST_NCA_READ))
+
+        print(" Preparing NetCDF2D object...")
+        netcdf2d_read = NetCDF2D(Input_Read)    # if available, read mesh/static data so far. needs 'nca' for it to work
+
+        print(" Found nca. Deleting...")
+        netcdf2d_read.cache.delete() # comment out to prevent reset
+
+    except:
+        print(" Couldn't find/read/delete/create nca.")          # otherwise create a new 'nca' for master
+
+    finally:
+        print(" Creating new one...")
+        with open("../input_master.json") as im:
+            master_input = json.load(im)
+        Master_Input = create_nca_input(master_input, nm_mesh)  # nm_mesh.timesteps is empty.
+
+    print(f"*** loading .mat files into node map ***")
     nm_from_mats = NodeMap()
-    nm_from_mats.load_mesh(mesh, xyz)
-    nm_from_mats.sort_coords()
 
     # from .mat files
     if get_year:
@@ -84,26 +108,37 @@ def test_main(*args):
                 results = os.path.join(data_folder, year, month, "results")
                 nm_from_mats.load_mat(results)
 
-    print(f"\n*** Creating NetCDF file as \'{NC_TEST_FILE}\' from node map ***")
-    create_netcdf(NC_TEST_FILE, nm_from_mats)
-    write_netcdf_static(NC_TEST_FILE, nm_from_mats, 'day')
-    write_netcdf_temporal(NC_TEST_FILE, nm_from_mats)
+    print("*** updating timesteps in nca ***")
+    Master_Input = update_timesteps(Master_Input, nm_from_mats)
 
-    print(f"\n*** Reading created NetCDF file (from \'{NC_TEST_FILE}\') ***")
-    nm = NodeMap()
-    nm.load_nc(NC_TEST_FILE)
+    print("*** initiating NetCDF2D object ***")
+    netcdf2d = None
+    try:
+        netcdf2d = NetCDF2D(Master_Input)
+    except:
+        raise
 
-    box = nm.get_node_area_delta(-123.3656, 48.4284, 1.0)
-    box2 = nm.get_node_area([-124.3656, 47.4284, -123.3656, 48.4284])
+    print("*** loading nca data into NetCDF2D... ***")  # separate function ?
 
-    print(box[:10], "...")
-    print("number of nodes around victoria (1 degree box):", len(box2))
+    for kvar, val in TEST_TEMPORAL_VARIABLES.items():
+        MAT_val = val['matfile name']  # need to detect HS_6hr and WIND_6hr
+        if MAT_val in nm_from_mats.matfiles:
+            print(f" {MAT_val}")
+            for kv, n in nm_from_mats.matfiles[MAT_val].items():
+                ts = kv[-15:]
+                date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
+                i = nm_from_mats.timesteps.index(date)
+                try:
+                    netcdf2d["s", kvar, i] = n
+                except ValueError as ve:
+                    raise
 
-    print(type(nm.timesteps[-1]))
-
-    # pyplot image
-    # nm.tri_plot()
-    # nm.update_plot()
+    print("*** NetCDF2d created and \'shipped\'. Attempting to read it back... ***\n")
+    try:
+        print("significant wave height of nodes in 4th timestep:", netcdf2d["s", "hs", 3])
+        print("wind x velocity of nodes in first timestep:", netcdf2d["s", "u10", 0])
+    except:
+        raise
 
     print("\n*** Finished ***")
   

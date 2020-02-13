@@ -27,19 +27,19 @@
     "units": "m/s", 
     "standard name": "u Wind velocity", 
     "long name": "u Wind velocity, m/s",
-    "matfile name": "WINDX"
+    "matfile name": "WIND_6hrX"
   },
   "v10": {
     "units": "m/s", 
     "standard name": "v Wind velocity", 
     "long name": "v Wind velocity, m/s",
-    "matfile name": "WINDY"
+    "matfile name": "WIND_6hrY"
   },
   "hs": {
     "units": "m", 
     "standard name": "significant wave height", 
     "long name": "significant wave height (in s)",
-    "matfile name": "HS"
+    "matfile name": "HS_6hr"
   },
   "tps": {
     "units": "s", 

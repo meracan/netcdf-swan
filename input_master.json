@@ -1,0 +1,36 @@
+{
+  "name":"SWANv5",
+  "cacheLocation":"../s3",
+  "localOnly":true,
+  "bucket":"merac-dev",
+  "cacheSize":10.0,
+  "ncSize":1.0,
+  "metadata":{"title":"title-input1"},
+  "nca": {
+    "dimensions" : {"npe":3,"nelem":0,"nnode":0,"ntime":0},
+    "groups":{
+      "elem":{"dimensions":["nelem","npe"],"variables":{
+          "elem":{"type":"i4", "units":"" ,"standard_name":"Elements" ,"long_name":"Connectivity table (mesh elements)"}
+        }
+      },
+      "time":{"dimensions":["ntime"],"variables":{
+          "time":{"type":"f8", "units":"hours since 1970-01-01 00:00:00.0","calendar":"gregorian" ,"standard_name":"Datetime" ,"long_name":"Datetime"}
+        }
+      },
+      "nodes":{"dimensions":["nnode"],"variables":{
+          "bed":{"type":"f4", "units":"m" ,"standard_name":"Bed Elevation, m" ,"long_name":"Description of data source"},
+          "friction":{"type":"f4", "units":"" ,"standard_name":"Bed Friction (Manning's)" ,"long_name":"Description of data source"}
+        }
+      },
+      "s":{"dimensions":["ntime","nnode"],"variables":{
+          "hs":{"type": "f8", "units": "m", "standard name": "significant wave height", "long name": "significant wave height (in s)"},
+          "u10": {"type": "f8", "units": "m/s", "standard name": "u Wind velocity", "long name": "u Wind velocity, m/s"}
+        }
+      },
+      "t":{"dimensions":["nnode","ntime"],"variables":{
+          "a":{"type":"f4", "units":"m" ,"standard_name":"a variable" ,"long_name":"Description of a"}
+        }
+      }
+    }
+  }
+}

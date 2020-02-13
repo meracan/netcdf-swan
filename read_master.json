@@ -1,0 +1,8 @@
+{
+  "name":"SWANv5",
+  "cacheLocation":"../s3",
+  "localOnly": false,
+  "bucket":"merac-dev",
+  "cacheSize":10.0,
+  "ncSize":1.0
+}

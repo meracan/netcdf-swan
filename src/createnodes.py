@@ -73,20 +73,16 @@ class NodeMap:
             needs latitude and longitude (bounding box)
         """
         self.num_nodes = 0
+        self.num_elements = 0
         self.node_order = None
         self.lon, self.lat = None, None
         self.lon_sort, self.lat_sort = [], []
         self.boundary_markers = None
-        self.xyz = None # Xp, Yp, Botlev. This info is in the mesh files anyway?
         self.matfiles = {}
         self.elements = None
-        self.timesteps = None
-        self.bathymetry = None
-        self.ready_timesteps = False
+        self.timesteps = []
+        self.bathymetry = []
 
-
-        #print("initializing node map...")
-        #self.load_mesh(meshfolder, xyz)
 
     def load_mesh(self, meshfolder):
         """ loads all mesh data and stores into class object
@@ -106,10 +102,10 @@ class NodeMap:
 
         self.num_nodes, self.node_order, self.lon, self.lat, self.boundary_markers = self.swan_noderead(meshfolder+"/"+mesh_node)
         self.elements = self.swan_eleread(meshfolder+"/"+mesh_ele)
+        self.num_elements = len(self.elements)
         self.bathymetry = self.swan_botread(meshfolder+"/"+mesh_bot)
 
-    # For the swan_ methods below, "- 1" turns MATLAB's 1 indexing
-    # into Python's 0 indexing
+    # For the swan methods below, "-1" turns MATLAB's 1 indexing into Python's 0 indexing
     def swan_noderead(self, nodefile):
         f = open(nodefile, 'r')
         V = np.loadtxt(f)
@@ -154,54 +150,51 @@ class NodeMap:
         """
         folder = ""
         mfiles = [filename]
+        timestep_keys = []
         if os.path.isdir(filename):
-          folder = filename+"/"
-          # print(f"Reading results folder \'{folder}\'...")
-          mfiles = [name for name in os.listdir(filename)]
+            folder = filename+"/"
+            mfiles = [name for name in os.listdir(filename)]  # e.g. ['HS.mat'] or ['HS.mat', 'WIND.mat', ... ]
         for mfilename in mfiles:
-          if re.match(re_matfile, mfilename):
-            print(f" reading {mfilename}...")
-            matfile_dict = {}
-            matfile_dict2 = {} # for x vs y
-            xysplit = 0
-            try:
-              matfile = loadmat(folder+mfilename)
-              matfile.pop('__header__')
-              matfile.pop('__version__')
-              matfile.pop('__globals__')
-              last_key = ""
-              for k, v in matfile.items():
-                k_new = k
-                v_new = np.squeeze(v)
-                if last_key[-15:] == k_new[-15:] and not xysplit:
-                  matfile_dict2[k_new[-15:]] = v_new # place in 'Y' dict first
-                  xysplit = 1 # next one will be 'X'
-                elif xysplit < 2:
-                  matfile_dict[k_new[-15:]] = v_new
-                  if xysplit == 1:
-                    xysplit = 2
-                elif xysplit == 2:
-                  matfile_dict2[k_new[-15:]] = v_new
-                  xysplit = 1
-                last_key = k_new
-              if xysplit:
-                mfilenameX = mfilename[:-4]+"X"
-                self.matfiles[mfilenameX] = matfile_dict
-                mfilenameY = mfilename[:-4]+"Y"
-                self.matfiles[mfilenameY] = matfile_dict2
-              else:
-                self.matfiles[mfilename[:-4]] = matfile_dict
-              if self.ready_timesteps:
-                # cannot get from self.xyz, so check if created yet
-                if self.timesteps is None:
-                    self.timesteps = sorted(list(set(matfile_dict.keys())))
-                else:
+            if re.match(re_mat, mfilename) or re.match(re_mat_test, mfilename):  # test included in here for now
+                print(f" reading {mfilename}...")
+                matfile_dict = {}
+                matfile_dictx = {}
+                matfile_dicty = {}
+                try:
+                    matfile = loadmat(folder+mfilename)
+                    matfile.pop('__header__')
+                    matfile.pop('__version__')
+                    matfile.pop('__globals__')
 
-                    pass
-                    # append more timesteps to the list/dictionary
-              #print(f" ...{mfilename} uploaded successfully.")
-            except NotImplementedError as e:
-              print(f"{e}!")
+                    # k: 'Hsig_20040101_030000' or 'Windx_20040106_120000', etc
+                    # v: 'array([-22.5, -18.0, -36.7, ...])' for all 177495 nodes
+                    for k, v in matfile.items():
+                        v_sq = np.squeeze(v)
+                        ts = k[-15:]
+                        date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
+                        timestep_keys.append(date)
+
+                        if re.match(re_x, k):
+                            matfile_dictx.update({k: v_sq})
+                        elif re.match(re_y, k):
+                            matfile_dicty.update({k: v_sq})
+                        else:
+                            matfile_dict.update({k: v_sq})
+
+                    if len(matfile_dict) == 0:
+                        self.matfiles[mfilename[:-4]+"X"] = matfile_dictx
+                        self.matfiles[mfilename[:-4]+"Y"] = matfile_dicty
+                    else:
+                        self.matfiles[mfilename[:-4]] = matfile_dict
+
+                    ttt = self.timesteps
+                    kkk = timestep_keys
+                    ttt.extend(kkk)
+                    ttt = sorted(list(set(ttt)))
+                    self.timesteps = ttt
+
+                except NotImplementedError as e:
+                  print(f"{e}!")
 
 
     def sort_coords(self):
@@ -231,8 +224,9 @@ class NodeMap:
     # must be a clean, empty node map to use the below methods
 
 
-    def load_nc(self, filename):
+    def load_nc_static(self, filename):
         """
+            reads static data variables from nc file
             ? self.boundary_markers = None
         """
         with Dataset(filename, "r", format="NETCDF4") as nc:
@@ -250,8 +244,22 @@ class NodeMap:
             self.ready_timesteps = True
             self.elements = nc.variables['elem'][:]
 
-            # for each data variable in nc file, store into self.matfiles dictionary
-            self.matfiles['HS'] = nc.variables['hs'][:]
+        #print(self.timesteps)
+
+    def load_nc_temporal(self, filename):
+        """
+            for each temporal data variable in nc file, store into self.matfiles dictionary.
+            could specify range of time steps? will need this functionality after grabbing from s3
+        """
+        with Dataset(filename, "r", format="NETCDF4") as nc:
+            for k, v in TEMPORAL_VARIABLES.items():
+                var = nc.variables[k]
+                mname = v["matfile name"]
+                try:
+                    self.matfiles[mname] = nc.variables[var][:]
+                except KeyError as e:
+                    cause = e.args[0]
+                    print(cause)
 
         #print(self.timesteps)
 

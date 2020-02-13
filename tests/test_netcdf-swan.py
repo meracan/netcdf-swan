@@ -133,10 +133,20 @@ def test_main(*args):
                 except ValueError as ve:
                     raise
 
-    print("*** NetCDF2d created and \'shipped\'. Attempting to read it back... ***\n")
+    print("*** NetCDF2d created and \'shipped\'. Attempting to read it back... ***")
     try:
-        print("significant wave height of nodes in 4th timestep:", netcdf2d["s", "hs", 3])
-        print("wind x velocity of nodes in first timestep:", netcdf2d["s", "u10", 0])
+        print(" Reading summary of nca in cache...")
+        try:
+            summary = NetCDFSummary(TEST_NCA_READ)
+            # pp.pprint(summary)
+            print("...worked.")
+        except:
+            print("couldn't read!")
+
+        print(" Reading NetCDF2D object...\n")
+        netcdf2d_read_again = NetCDF2D(Input_Read)
+        print("*    significant wave height of nodes in 4th timestep:", netcdf2d_read_again["s", "hs", 3])
+        print("*    wind x velocity of nodes in first timestep:", netcdf2d_read_again["s", "u10", 0])
     except:
         raise
 

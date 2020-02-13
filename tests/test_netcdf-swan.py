@@ -39,14 +39,17 @@ with open("../test_variable_names.json") as vnames:
 def test_main(*args):
     """
 
-    :param args: <folder where swan data is> <year> <month> <day> <hour>
+    :param args: <folder where swan data is> <year> <month>
     :return:
     """
     # initial test parameters:  $ ../data 2004 01
     data_folder = TEST_SWAN_FOLDER
     mesh = TEST_MESH_FOLDER
-    args = args[0]
-    get_year, get_month, get_day, get_hour, date = "", "", "", "", ""
+
+    args = args[0] # ?
+    print(args)
+
+    get_year, get_month = "", ""
 
     if len(args) > 1:
         if args[1] != '.':
@@ -56,14 +59,6 @@ def test_main(*args):
         get_year = args[2]
     if len(args) > 3:
         get_month = args[3]
-    if len(args) > 4:
-        get_day = args[4]
-        date = datetime(int(get_year), int(get_month), int(args[4]))
-        # print("date reference created:", date)
-    if len(args) > 5:
-        get_hour = args[5]
-        date = datetime(int(get_year), int(get_month), int(args[4]), int(args[5]))
-        print("date reference created:", date)
 
     print(f"\n*** loading mesh folder into node map ***")
     nm_mesh = NodeMap()
@@ -96,17 +91,18 @@ def test_main(*args):
 
     # from .mat files
     if get_year:
-        if get_month:   # load mat data for one month
+        if get_month:           # .mat files for one month
             results = os.path.join(data_folder, get_year, get_month, "results")
-        else:           # load mat data for all months of one year
+        else:                   # .mat files for all months of one year
             results = os.path.join(data_folder, get_year)
         nm_from_mats.load_mat(results)
 
-    else:               # load mat data for ALL months from ALL years
+    else:                       # .mat files for ALL months from ALL years
         for year in os.listdir(data_folder):
-            for month in os.listdir(data_folder + "/" + year):
-                results = os.path.join(data_folder, year, month, "results")
-                nm_from_mats.load_mat(results)
+            if year != 'Mesh' and not year.startswith('.'):
+                for month in os.listdir(data_folder + "/" + year):
+                    results = os.path.join(data_folder, year, month, "results")
+                    nm_from_mats.load_mat(results)  # loads everything into node_map.matfiles and node_map.timesteps
 
     print("*** updating timesteps in nca ***")
     Master_Input = update_timesteps(Master_Input, nm_from_mats)

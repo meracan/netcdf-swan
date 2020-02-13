@@ -3,10 +3,13 @@ import os
 import numpy as np
 import pandas as pd
 import json
+import pprint as pp
 from datetime import datetime, timedelta
 from createnodes import NodeMap
 from netCDF4 import Dataset
 from netCDF4 import num2date, date2num
+from s3netcdf import NetCDF2D
+from s3netcdf.netcdf2d_func import createNetCDF, NetCDFSummary
 
 # note: pytest will not show progress bar if used in pycharm!
 TQDM = True
@@ -21,186 +24,68 @@ with open("../variable_names.json") as vnames:
     TEMPORAL_VARIABLES = json.load(vnames)
 
 
-def create_netcdf(filepath, node_map):
-    """
-    Creates a 'blank' netcdf filewith the necesary attributes but without any data.
 
-    latsort and lonsort are for sorting latitudes and longitudes. The assumption is that it will make
-    searching for nodes quicker when specifying a region. Probably won't need later on?
+def create_nca_input(json_template, node_mesh):
+    """
+    Creates an 'nca' structure for the master input template (json) using swan mesh data.
+    No variable data is loaded yet.
 
     :param filepath:
-    :param node_map:
-    :return:
-    """
-    with Dataset(filepath, "w") as src_file:
+    :param node_mesh:
+    :return: JSON-like structure ready for NetCDF2D object
 
-        # ------ Metadata -------------
-        src_file.title = "File description"
-        src_file.institution = "Specifies where the original data was produced"
-        src_file.source = "The method of production of the original data"
-        src_file.history = "Provides an audit trail for modifications to the original data"
-        src_file.references = "Published or web-based references that describe the data or methods used to produce it"
-        src_file.comment = "Miscellaneous information about the data or methods used to produce it"
-
-        # ------- Dimensions ----------
-        ntime = src_file.createDimension("ntime", None) # dimensionless means dynamic
-        nnode = src_file.createDimension("nnode", node_map.num_nodes)
-        npe = src_file.createDimension("npe", 3)
-        nelem = src_file.createDimension("nelem", len(node_map.elements))
-
-        # ---- Static Variables -------
-        elem = src_file.createVariable("elem","i4",("nelem","npe",))
-        elem.units = ""
-        elem.standard_name = "element"
-        elem.long_name = "element"
-
-        lon = src_file.createVariable("lon","f8", ("nnode",))
-        lon.units = "degrees_east"
-        lon.standard_name = "longitude"
-        lon.long_name = "longitude"
-
-        lat = src_file.createVariable("lat", "f8", ("nnode",))
-        lat.units = "degrees_north"
-        lat.standard_name = "latitude"
-        lat.long_name = "latitude"
-
-        lonsort = src_file.createVariable("lonsort","i4", ("nnode",))
-        lonsort.units = "node number"
-        lonsort.standard_name = "node number"
-        lonsort.long_name = "node number of longitude"
-
-        latsort = src_file.createVariable("latsort", "i4", ("nnode",))
-        latsort.units = "node number"
-        latsort.standard_name = "node number"
-        latsort.long_name = "node number of latitude"
-
-        b = src_file.createVariable("b", "f8", ("nnode",))
-        b.units = "m"
-        b.standard_name = "Bathymetry"
-        b.long_name = "Bathymetry, m (CGVD28)"
-
-        time = src_file.createVariable("time", "f8", ("ntime",))
-        time.units = "hours since 0001-01-01 00:00:00.0"
-        time.calendar = "gregorian"
-        time.standard_name = "Datetime"
-        time.long_name = "Datetime"
-
-        # ------ Temporal Variables ------
-        for k,v in TEMPORAL_VARIABLES.items():
-            var = src_file.createVariable(k, "f8", ("ntime", "nnode",))
-            var.units = v['units']
-            var.standard_name = v['standard name']
-            var.long_name = v['long name']
-
-        """
-        # ------ Spectral Data -----------
-        nnode_c = src_file.createDimension("nnode_c", 2)
-        nspectra = src_file.createDimension("nspectra", 50)
-        nfreq = src_file.createDimension("nfreq", 33)
-        ndir = src_file.createDimension("ndir", 36)
-        specnodeindex = src_file.createVariable("specnodeindex", "i4", ("nspectra",))
-        spectra = src_file.createVariable("spectra", "f4", ("ntime","nspectra","nfreq","ndir",))
-        spectra.units = "TODO"
-        spectra.standard_name = "TODO"
-        spectra.long_name = "Spectra"
-        """
-
-
-def write_netcdf_static(filepath, node_map, timerange='month' ):
-    """
-    Trying to limit number of timesteps (temporary)
-    extract date elements with node_map.timesteps
-    change t[9:11] (hours) if necessary
-    do we want to enumerate with i, or use dict keys instead?
-      e.g. '20040101_020000': 2004-1-1 2:0:0
-    :param filepath:
-    :param node_map:
-    :param timerange:
-    :return:
     """
 
-    with Dataset(filepath, "r+") as src_file:
-        # Dimensions
-        ntime = len(src_file.dimensions['ntime'])
-        nnode = len(src_file.dimensions['nnode'])
-        npe = len(src_file.dimensions['npe'])
-        nelem = len(src_file.dimensions['nelem'])
-
-        # temporary
-        if timerange == 'month': timerange = ntime  # <-----
-        elif timerange == 'day': timerange = 24     # <-----
-        elif timerange == '3 hours': timerange = 3  # <-----
-        elif timerange == '1 hour': timerange = 1   # <-----
-        elif timerange == '0': timerange = 0        # <-----
-
-        elem = src_file.variables['elem']
-        lon = src_file.variables['lon']
-        lat = src_file.variables['lat']
-        lonsort = src_file.variables['lonsort']
-        latsort = src_file.variables['latsort']
-        b = src_file.variables['b']
-        time = src_file.variables['time']
-
-        elem[:] = np.array(node_map.elements)
-        lon[:] = np.array(node_map.lon)
-        lat[:] = np.array(node_map.lat)
-        lonsort[:] = np.array(node_map.lon_sort)
-        latsort[:] = np.array(node_map.lat_sort)
-        b[:] = np.array(node_map.bathymetry)
-        print(timerange)
-        for i, ts in enumerate(node_map.timesteps):
-            if i >= timerange: break
-            date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
-            time[i] = date2num(date, units=time.units, calendar=time.calendar)
+    master_input = json_template
 
 
-def write_netcdf_temporal(filepath, node_map):
-    """
-    could be a whole separate netCDF file in the end. need to save space
-    store time coord as dictionary? might be faster than list/array
-    e.g. '20040101_020000': -56.5
-    date2num becomes 17557968.0 for 1 Jan 2004
-    :param filepath:
-    :param node_map:
-    :return:
-    """
+    # below is only for part of the Input_Master
+    metadata = dict(
+        title="File description",
+        institution="Specifies where the original data was produced",
+        source="The method of production of the original data",
+        history="Provides an audit trail for modifications to the original data",
+        references="Published or web-based references that describe the data or methods used to produce it",
+        comment="Miscellaneous information about the data or methods used to produce it"
+    )
+    master_input["metadata"] = metadata
 
-    with Dataset(filepath, "r+") as src_file:
-        time = src_file.variables['time']
-        if TQDM:
-            for k, v in TEMPORAL_VARIABLES.items():
-                var = src_file.variables[k]
-                mname = v["matfile name"]
-                if mname:
-                    try:
-                        print(f"\n{mname}:")
-                        for tt in tqdm(range(len(time))):
-                            var[tt, :] = np.array(node_map.matfiles[mname][node_map.timesteps[tt]])
-                    except KeyError as ke:
-                        print(f"{mname} file not found.")
-        else:
-            for k, v in TEMPORAL_VARIABLES.items():
-                var = src_file.variables[k]
-                mname = v["matfile name"]
-                if mname:
-                    try:
-                        for tt in range(len(time)): # <----- specify actual date/time range
-                            var[tt, :] = np.array(node_map.matfiles[mname][node_map.timesteps[tt]])
-                        print(f"{mname}")
-                    except KeyError as ke:
-                        #print(f"({mname} file not found)")
-                        pass
+    # no timesteps in the static nc file, will be updated as more temporal nc files are created
+    dimensions = dict(
+        npe=3,
+        nnode=node_mesh.num_nodes,
+        ntime=0,
+        nelem=node_mesh.num_elements
+    )
+    master_input["nca"]["dimensions"] = dimensions
+
+    variables = dict(
+        lat=dict(type="float64", dimensions=["nnode"], units="degrees_north", standard_name="latitude", long_name="latitude"),
+        lon=dict(type="float64" ,dimensions=["nnode"] ,units="degrees_east" ,standard_name="longitude" ,long_name="longitude"),
+        elem=dict(type="int32", dimensions=["nelem", "npe"], units="", standard_name="elements", long_name="elements"),
+        time=dict(type="float64", dimensions=["ntime"], units="hours since 1970-01-01 00:00:00.0", calendar="gregorian",
+                  standard_name="Datetime", long_name="Datetime"),
+        b=dict(type="float32", dimensions=["nnode"], units="m", standard_name = "Bathymetry", long_name = "Bathymetry, m (CGVD28)")
+    )
+    master_input["nca"]["variables"] = variables
+
+    # temporal data (check for master)
+    variables2 = {}
+    for k, v in TEMPORAL_VARIABLES.items():
+        var=dict(type="float32", units=v["units"], standard_name=v["standard name"], long_name=v["long name"])
+        variables2.update({k: var})
+
+    groups = dict(
+        s=dict(dimensions=["ntime", "nnode"], variables=variables2),
+    )
+    master_input["nca"]["groups"] = groups
+
+    return master_input
 
 
-        """
-        # ------ Spectral Data -----------
-        nspectra = len(src_file.dimensions["nspectra"])
-        nfreq = len(src_file.dimensions["nfreq"])
-        ndir = len(src_file.dimensions["ndir"])
-        specnodeindex = src_file.variables['specnodeindex']
-        spectra = src_file.variables['spectra']
-        specnodeindex[:] = np.arange(0, nspectra, dtype=np.int32)
-        """
+def update_timesteps(json_template, node_map):
+    json_template["nca"]["dimensions"]["ntime"] = len(node_map.timesteps)
+    return json_template
 
 
 def print_netcdf(filepath):
@@ -279,8 +164,9 @@ def ncdump(nc_fid, verb=True):
 
 
 if __name__ == "__main__":
-    create_netcdf(TEST_FILE_PATH)
-    write_netcdf_static(TEST_FILE_PATH)
-    write_netcdf_temporal(TEST_FILE_PATH)
-    print_netcdf(TEST_FILE_PATH)
+    pass
+    #create_netcdf(TEST_FILE_PATH)
+    #write_netcdf_static(TEST_FILE_PATH)
+    #write_netcdf_temporal(TEST_FILE_PATH)
+    #print_netcdf(TEST_FILE_PATH)
 

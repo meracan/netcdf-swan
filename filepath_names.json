@@ -1,8 +1,8 @@
 {
-  "data_folder": "./BCSWANv5",
+  "data_folder": "../BCSWANv5",
   "output_nc_mesh": "../output/test_nca_master.nc",
   "output_nc": "../output/",
-  "mesh_folder": "../data/Mesh",
+  "mesh_folder": "../BCSWANv5/Mesh",
   "swanv5": "../s3/SWANv5/SWANv5.nca",
   "test_data_folder": "./data",
   "test_mesh_folder": "./data/Mesh"

@@ -23,6 +23,8 @@ TEST_FILE_PATH = "nc_examples/test.nc"
 with open("../variable_names.json") as vnames:
     TEMPORAL_VARIABLES = json.load(vnames)
 
+with open("../read_master.json") as rm:
+    Input_Read = json.load(rm)
 
 
 def create_nca_input(json_template, node_mesh):
@@ -88,9 +90,10 @@ def update_timesteps(json_template, node_map):
     return json_template
 
 
-def print_netcdf(filepath):
+def print_netcdf(filepath, verb=True):
     with Dataset(filepath, "r") as src_file:
-        ncdump(src_file)
+        ncdump(src_file, verb)
+
 
 def ncdump(nc_fid, verb=True):
     """
@@ -160,6 +163,7 @@ def ncdump(nc_fid, verb=True):
                 print(nc_fid.variables[var].size)
 
                 print_ncattr(var)
+
     return nc_attrs, nc_dims, nc_vars
 
 

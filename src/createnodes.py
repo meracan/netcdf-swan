@@ -134,7 +134,7 @@ class NodeMap:
 
     def load_mat(self, filename):
         """ searches the entire folder if month folder is given,
-            otherwise the filename should look like '[...]/results/WIND.mat' or something
+            otherwise the filename should look like '[...]/results/WIND.mat' or something (not working yet)
 
             header, version and globals are popped for now, might need later?
 
@@ -156,7 +156,7 @@ class NodeMap:
             mfiles = [name for name in os.listdir(filename)]  # e.g. ['HS.mat'] or ['HS.mat', 'WIND.mat', ... ]
         for mfilename in mfiles:
             if re.match(re_mat, mfilename) or re.match(re_mat_test, mfilename):  # test included in here for now
-                print(f" reading {mfilename}...")
+                #print(f" reading {mfilename}...")
                 matfile_dict = {}
                 matfile_dictx = {}
                 matfile_dicty = {}

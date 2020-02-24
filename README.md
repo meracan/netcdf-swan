@@ -19,3 +19,12 @@ pip install -e ./s3-netcdf
 git clone https://github.com/meracan/netcdf-swan.git
 pip install -e ./netcdf-swan
 ```
+
+
+# Usage
+## Basic
+```python
+from netcdfswan import NodeMap
+nm_mesh = NodeMap()
+
+```

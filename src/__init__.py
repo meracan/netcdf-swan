@@ -1,1 +1,1 @@
-from .createnodes import NodeMap
+from .netcdfswan import NodeMap

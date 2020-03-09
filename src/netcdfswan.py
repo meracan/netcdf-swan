@@ -1,49 +1,95 @@
 #!/usr/bin/env python3
 """
-    used before creating and loading to netcdf file, as well as for reading from
-    a netcdf file to be used for plotting, etc.
+    netcdfswan.py
+        Creates and stores partitioned netcdf (.nc) files from SWAN data into a local cache and
+    uploads them to an Amazon S3 bucket, using the s3-netcdf (tentative, will change) package.
 
-    - read from swan files into memory      <-- this step
-    - store node info as netCDF file
-    - turn into s3 bucket object and deploy
+    The directory path for the SWAN data should be written in 'input_master.json' ahead of time so the script knows
+    where to look when it runs. Other path names are also stored in this json file. Ideally, the script should be placed
+    beside the data folder. netcdfswan.py assumes a folder structure sorted temporally,
+    with 12 month folders per year folder:
 
-      .node file in the mesh will have lat and long information
-    load Mesh files -- 
-      ele for triangles
-      node for lat and long (as well as type)
-  
-    start with small data for now
-  
-    import h5py to resolve mat files not loading properly (Error):
-    https://stackoverflow.com/questions/17316880/reading-v-7-3-mat-file-in-python
+    `-- SWAN_DATA
+        |
+        |-- 2005
+        |-- 2006
+        |-- 2007
+        :   |-- 01
+            |-- 02
+            |-- 03
+            :   `-- results
+                    |-- HS.mat
+                    |-- WIND.mat
+                    |-- line_n.spc
+                    |-- QP.mat
+                    :
 
-    if path is not specified, assumes data is in a folder called 'data'
+                    :
+                    |-- hotspots.spc
+                    `-- TPS.mat
+            :
+            |-- 11
+            `-- 12
+        :
+        |-- 2016
+        |-- 2017
+        |
+        `-- Mesh
+            |-- .ele
+            |-- .bot
+            `-- .node
 
-    1 netcdf for each timestep.
+    The Mesh folder holds latitudes, longitudes, and bathymetry of all the nodes, and other triangle mesh information.
+    The Matlab (.mat) files in the 'results' folder of each month holds variable information for all of the nodes,
+    as well as spectra information.
+
+    Procedure:
+    swan data -> node map -> .nc + .nca files (NetCDF2D: write) -> upload (NetCDF2D: S3 client)
+
+    The Node Map class acts as a sort of hub to hold all of the static and meta data as nc files are being created,
+    and provides some useful methods for plotting, etc. When the Node Map is initialized, it first loads the static data
+    contained in the Mesh folder.
 
     Uploading:
     1. Creates a node map that first searches for the Mesh folder in the path 'data_folder' and
         stores its .ele, .bot, and .node data.
 
-    2. loads mat files in the 'results' folder for each given year and month if specified.
+    2. loads .mat files in the 'results' folder for each year and month
 
     3. uploads data to cache and cloud using s3netcdf package
 
-    Downloading:
-    ???
+    Basic usage:
+    create node map first, then upload the .mat files:
+
+    nm = NodeMap()
+    nm.upload_mats()
+
+
+    ...
+
+    TODO:
+        input_master: change localOnly to False for actual run
+        upload(): give stats, how much data was transferred/uploaded, which data/dates, etc.
+            'verbose' option
+        download(): need? based on specificity, including variable:
+            $ netcdf-swan.py download <year> <month> <variable>
+            useful for visual manipulation, triangle mesh grids, .nc creation, etc.
+        option to convert to non-partitioned .nc file
+
+
 
 """
 import json
 import os, sys
 import numpy as np
 import re
+import pprint as pp
 from scipy.io import loadmat
 import matplotlib.pyplot as plt
 from matplotlib.tri import Triangulation
 from netCDF4 import Dataset, num2date, date2num
 from datetime import datetime
 from s3netcdf import NetCDF2D
-# from createnetcdf import create_nca_input
 
 TQDM = True  # <--- change
 try:
@@ -53,16 +99,19 @@ except ModuleNotFoundError:
 
 # regex for possible matlab file names.
 re_mat = re.compile(r"(WIND|HS|TPS|TMM10|TM01|TM02|PDIR|DIR|DSPR|QP|TRANSP)[.]mat")
-re_mat_test = re.compile(r"(WIND_6hr|HS_6hr)[.]mat")  # separate test from actual?
+re_spc = re.compile(r"()[.]spc")
+re_mat_test = re.compile(r"(WIND_6hr|HS_6hr|HS_)[.]mat")  # separate test from actual?
 
 re_ele = re.compile(r".+[.]ele")
 re_bot = re.compile(r".+[.]bot")
 re_node = re.compile(r".+[.]node")
 re_x = re.compile(r"^.*_x_")
 re_y = re.compile(r"^.*_y_")
-re_upload = re.compile(r"-?[uU](pload)?")
-re_download = re.compile(r"-?[dD](ownload)?")
-re_edit = re.compile(r"-?[eE](dit)?")  # might not use, but we'll see
+re_upload = re.compile(r"^-?[uU](pload)?$")
+re_download = re.compile(r"^-?[dD](ownload)?$")
+re_static = re.compile(r"^-?[sS](tatic)?$")
+re_mesh = re.compile(r"^-?[mM](esh)?$") #
+re_edit = re.compile(r"^-?[eE](dit)?$")  # might not use, but we'll see
 re_year = re.compile(r"^20[0-9][0-9]$")
 re_month = re.compile(r"^(0?[1-9]|1[0-2])$")
 # re_day = re.compile(r"^(0?[1-9]|[12][1-9]|3[01])$")
@@ -73,14 +122,10 @@ re_month = re.compile(r"^(0?[1-9]|1[0-2])$")
 
 class NodeMap:
 
-    def __init__(self):
-        """
-            only plot a subset of all the node data, which should be loaded first (change later)
-            dynamic plot, visual rep. of the nodes
-            needs latitude and longitude (bounding box)
-
-            When initialized, the NodeMap automatically searches for the Mesh folder in the
-                path 'data_folder' and stores its .ele, .bot, and .node data.
+    def __init__(self, reloading=False):
+        """ 1. reads and stores .ele, .bot, and .node data in the Mesh folder
+            2. creates timesteps based on the earliest and latest possible times in the dataset.
+            3. creates the nca template using the mesh and time information
         """
         self.num_nodes = 0
         self.num_elements = 0
@@ -159,21 +204,22 @@ class NodeMap:
         return z
 
 
-    def load_mat(self, filename):
-        """ searches the entire folder if month folder is given,
-            otherwise the filename should look like '[...]/results/WIND.mat' or something (not working yet)
+    def load_mat(self, filepath, mname):
+        """
+            Loads one mat file into self.matfile1 and self.matfile2 if there are both X and Y coordinates
+            (e.g. WIND.mat), otherwise just stores into self.matfile1.
 
-            header, version and globals are popped for now, might need later?
+            The header, version and globals are popped for now. (might need later?)
 
-            need  'np.squeeze()'  to get rid of nested arrays like 'array([[-22.5, -18.0, -36.7, ...]])'
+            (self.timesteps used to be replaced each time)
 
-            matfile has either one dimension or two (x and y coordinates) for each time step.
+            'np.squeeze()' is needed to get rid of nested arrays like 'array([[-22.5, -18.0, -36.7, ...]])'
 
-            name stripping:
-                key == 'abcde_20040101_050000'
-                key[-15:] == '20040101_050000'
+            name stripping is to isolate the date:
+                key <- 'abcde_20040101_050000'
+                key[-15:] -> '20040101_050000'
 
-            Hsig_20040101_050000 is one column, which should be turned into one .nc file
+            the start date is updated with the first time step of the month at the end
         """
         folder = ""
         mfiles = [filename]
@@ -228,7 +274,7 @@ class NodeMap:
         # update timesteps in input template
         self.master_input["nca"]["dimensions"]["ntime"] = len(self.timesteps)
 
-
+    # ===================== below not needed anymore?
     def sort_coords(self):
         """ should be after getting coordinates. check if tqdm is installed
         """
@@ -251,49 +297,8 @@ class NodeMap:
                 self.lat_sort.append( lat_i_sort[i] )
 
 
+    # ===========================
 
-    # ====================== from .nc
-    # must be a clean, empty node map to use the below methods (not used anymore?)
-
-
-    def load_nc_static(self, filename):
-        """
-            reads static data variables from nc file
-            ? self.boundary_markers = None
-        """
-        with Dataset(filename, "r", format="NETCDF4") as nc:
-            time = nc.variables['time']
-            lon, lat = nc.variables['lon'], nc.variables['lat']
-            lonsort, latsort = nc.variables['lonsort'], nc.variables['latsort']
-
-            self.num_nodes = len(lon)
-            # turn into lists to speed up algorithm (doesnt run properly otherwise)
-            self.lon, self.lat = list(lon[:]), list(lat[:])
-            self.lon_sort, self.lat_sort = list(lonsort[:]), list(latsort[:])
-
-            self.bathymetry = nc.variables['b'][:]
-            self.timesteps = nc.variables['time'][:]
-            self.ready_timesteps = True
-            self.elements = nc.variables['elem'][:]
-
-        #print(self.timesteps)
-
-    def load_nc_temporal(self, filename):
-        """
-            for each temporal data variable in nc file, store into self.matfiles dictionary.
-            could specify range of time steps? will need this functionality after grabbing from s3
-        """
-        with Dataset(filename, "r", format="NETCDF4") as nc:
-            for k, v in self.temp_var_names.items():
-                var = nc.variables[k]
-                mname = v["matfile name"]
-                try:
-                    self.matfiles[mname] = nc.variables[var][:]
-                except KeyError as e:
-                    cause = e.args[0]
-                    print(cause)
-
-        #print(self.timesteps)
 
     def node_submap_area(self, min_lat, max_lat, min_long, max_long, start_time, end_time):
         """ should have read a node map already
@@ -352,9 +357,16 @@ class NodeMap:
 
     def load_mats(self, year="", month=""):
         """
-        After mat files are loaded into the node map, meta data is put into an input template for the
-        master nc file (.nca). The .nca file template is then updated with the timesteps that
-        were extracted from the .mat data.
+        - Pseudocode -
+
+        determine starting month folder
+        for each year:
+            for each month:
+                for each .mat (and .spc) file:
+                    load .mat file into the Node Map (e.g. HS.mat)
+                    use s3-netcdf package to partition the data and store in the cache
+                    set reloading to false to prevent mesh data from loading again (only need to do once)
+                write latest timestep to 'startdate.txt'
 
         """
         print(f"*** loading mat data")
@@ -377,9 +389,11 @@ class NodeMap:
         #self.master_input["nca"]["dimensions"]["ntime"] = len(self.timesteps)
 
 
-    def create_nca_input(self):  # to eliminate 'createnetcdf.py', probably only need the one .py script
+
+
+    def create_nca_input(self):
         """
-        Creates an 'nca' structure for the master input template (json) using swan mesh data.
+        Creates an 'nca' structure for the master input template (json) using the swan mesh data.
         No variable data is loaded yet.
 
         Information stored in another .json file
@@ -433,13 +447,15 @@ class NodeMap:
         master_input["nca"]["groups"] = groups
 
         self.master_input = master_input
-        #return master_input
 
 
     def upload(self):
         """
-        A NetCDF2D object is created with the finished template and the contents from the node map
-            are written to the NetCDF2D object one timestep at a time.
+            A NetCDF2D object is created with the finished template and the contents from the node map
+                are written to the NetCDF2D object one timestep at a time.
+            if 'reloading' is true, that means we need to re-load all static data as well as the time steps.
+
+            upload_to_cache then empties both self.matfile1 and self.matfile2 --> {} for the next upload
         """
         print("- Upload -")
         print("*** initializing NetCDF2D object")
@@ -460,14 +476,15 @@ class NodeMap:
 
         print("*** NetCDF2d created and shipped")
 
-        # nm.upload() # uploading to s3 using NodeMap() instead of the other script
-        # will also use this for downloading as well, so of course need documentation to help whoever will be using it
+
 
 
     def download(self):
         """
+        TODO
         Create NetCDF2D object like the upload method, but use it to read from cache instead.
-        Can then use tri_plot to visualize the data
+        Can then use tri_plot to visualize the data.
+
         """
         print("- Download -")
         print("*** initializing NetCDF2D object")
@@ -552,7 +569,38 @@ class NodeMap:
 
 def main(*args):
     """
+        changed load_mat to only get one matfile at a time, then uploading.
+        Python only has a limited memory capacity, and since each mat file is just over half a gigabyte,
+        the matfiles = {} dictionary will not be able to hold all of the information:
+
+            0 - mesh data only needs to be read once, when calling NodeMap() for the first time.
+
+            upload_mats():
+              for year in years:
+                for month in months:
+                  1 - load ONE mat file in the NodeMap (e.g. HS.mat)
+                  3 - upload mat file to the cloud
+                  4 - delete mat file from nodemap
+                  5 - start from step 1 with NEW mat file (e.g. WIND.mat)
+
+        After a mat file is loaded into the node map, meta data is put into an input template for the
+        master nc file (.nca). The .nca file template is then updated with the timesteps that
+        were extracted from the .mat data.
+
+
+        should have parameter to indicate where to continue from if upload is interrupted
+        In this case the folders are assumed to be extracted from in chronological order.
+
+        might make more sense if folder path doesn't need to be specified....
+
+        if one of the variables fails to upload, whole month should be re-uploaded again (not too inconvenient)
+        basically, can start from any year or month of a year and upload from those onward
+
+
+        if upload does get interrupted, should be able to detect where it left off automatically
+            based on timestep information in the nca file
         (User parameters)
+
 
         If a year and month are specified, will search the results folder just in that month:
             $ netcdf-swan.py upload <data folder path> <year> <month>
@@ -572,7 +620,21 @@ def main(*args):
         :param args:
             <upload/download> <folder path> <year> <month> ...
         :return:
+
+        $ python3 netcdfswan.py upload mesh  # deprecated
+
+
+        # putting in dates implies the timesteps need to be loaded again
+        $ python3 netcdfswan.py upload 2004 01
+        $ python3 netcdfswan.py upload 2004
+        $ python3 netcdfswan.py upload
+
+        $ python3 netcdfswan.py download 2007 04 hs # dont worry about until after
+
     """
+    # get rid of parentheses and script name
+    args = args[0]
+    args.pop(0)
 
     args = args[0]  # get rid of parentheses
 
@@ -608,4 +670,5 @@ def main(*args):
 
 if __name__ == '__main__':
     args_ = sys.argv
-    main(args_[1:])
+    #print(args_)
+    main(args_)

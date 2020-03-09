@@ -129,42 +129,61 @@ class NodeMap:
         """
         self.num_nodes = 0
         self.num_elements = 0
+        self.num_timesteps = 0
         self.node_order = None
         self.lon, self.lat = None, None
         self.lon_sort, self.lat_sort = [], []
         self.boundary_markers = None
-        self.matfiles = {}
+        self.matfile1 = {}
+        self.matfile2 = {}
         self.elements = None
         self.timesteps = []
+        self.start_date = 0
+        self.start_year = ""
+        self.start_month = ""
         self.bathymetry = []
 
-        with open("../filepath_names.json") as fpnames:
-            names = json.load(fpnames)
-            self.mesh_folder = names['mesh_folder']
-            self.data_folder = names['data_folder']  # ./BCSWANv5, but uses test_variable_names anyway
-        with open("../test_variable_names.json") as vnames: # !!! remove 'test' when finished
+        with open("../jsons/variable_names.json") as vnames:  # !!! remove 'test' when finished ----<---
             self.temp_var_names = json.load(vnames)
-        with open("../read_master.json") as rt:
+        with open("../jsons/read_master.json") as rt:
             self.read_template = json.load(rt)
-        with open("../input_master.json") as im:
+        with open("../jsons/input_master.json") as im:
             self.master_input = json.load(im)
+            self.mesh_folder = self.master_input["file paths"]["mesh folder"]
+            self.data_folder = self.master_input["file paths"]["data folder"]
 
-        # mesh data and nca input are loaded and created automatically
-        self.load_mesh(self.mesh_folder) # will put num_nodes and num_elements
-        self.create_nca_input()
+        self.load_mesh()
+        self.load_timesteps()  # user specified (?) if interruption, will need to read from s3 first.
+        self.create_nca_input()  # timesteps can go in here now that all of them are 'loaded'
 
+    def load_timesteps(self):
+        # temporary solution:
+        if os.path.exists("startdate.txt"):
+            with open("startdate.txt", "r") as sd:
+                self.start_date = sd.readline()
+                self.start_year = self.start_date[:4]
+                self.start_month = self.start_date[5:7]
+                print(f"read startdate.txt: |{self.start_date}|, year: {self.start_year}, month: {self.start_month}")
+        else:
+            print("no file called \'startdate.txt\'")
 
-    def load_mesh(self, meshfolder):
-        """ loads all mesh data and stores into class object
-            assumes mesh folder exists
-            (should need to do only once--)
-            * UPDATE
-            should do automatically when NodeMap() is called
-        """
+        # hard coded in beforehand
+        self.timesteps = [
+            num2date(
+                298032 + t,
+                units="hours since 1970-01-01 00:00:00.0",
+                calendar="gregorian"
+            )
+            for t in range(116064)
+        ]
+
+        self.num_timesteps = len(self.timesteps)
+
+    def load_mesh(self):
         mesh_node = ""
         mesh_ele = ""
         mesh_bot = ""
-        for name in os.listdir(meshfolder): # necessary?
+        for name in os.listdir(self.mesh_folder):
           if re.match(re_node, name):
             mesh_node = name
           elif re.match(re_ele, name):
@@ -172,10 +191,10 @@ class NodeMap:
           elif re.match(re_bot, name):
             mesh_bot = name
 
-        self.num_nodes, self.node_order, self.lon, self.lat, self.boundary_markers = self.swan_noderead(meshfolder+"/"+mesh_node)
-        self.elements = self.swan_eleread(meshfolder+"/"+mesh_ele)
+        self.num_nodes, self.node_order, self.lon, self.lat, self.boundary_markers = self.swan_noderead(self.mesh_folder+"/"+mesh_node)
+        self.elements = self.swan_eleread(self.mesh_folder+"/"+mesh_ele)
         self.num_elements = len(self.elements)
-        self.bathymetry = self.swan_botread(meshfolder+"/"+mesh_bot)
+        self.bathymetry = self.swan_botread(self.mesh_folder+"/"+mesh_bot)
 
     # For the swan methods below, "-1" turns MATLAB's 1 indexing into Python's 0 indexing
     def swan_noderead(self, nodefile):
@@ -221,58 +240,49 @@ class NodeMap:
 
             the start date is updated with the first time step of the month at the end
         """
-        folder = ""
-        mfiles = [filename]
         timestep_keys = []
-        if os.path.isdir(filename):
-            folder = filename+"/"
-            mfiles = [name for name in os.listdir(filename)]  # e.g. ['HS.mat'] or ['HS.mat', 'WIND.mat', ... ]
-        print(filename)
-        for mfilename in mfiles:
-            if re.match(re_mat, mfilename) or re.match(re_mat_test, mfilename):  # test included in here for now
-                print(f" reading {mfilename}...")
-                matfile_dict = {}
-                matfile_dictx = {}
-                matfile_dicty = {}
-                try:
-                    matfile = loadmat(folder+mfilename)
-                    matfile.pop('__header__')
-                    matfile.pop('__version__')
-                    matfile.pop('__globals__')
 
-                    # k: 'Hsig_20040101_030000' or 'Windx_20040106_120000', etc
-                    # v: 'array([-22.5, -18.0, -36.7, ...])' for all 177495 nodes
-                    for k, v in matfile.items():
-                        v_sq = np.squeeze(v)
-                        ts = k[-15:]
-                        date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
-                        timestep_keys.append(date)
+        print(f" (load_mat) reading from {filepath}")
+        mfile = re.match(re_mat, mname).groups()[0] # remove 'test' when ready <------
+        matfile_dict = {}
+        matfile_dictx = {}
+        matfile_dicty = {}
+        #print(mfile)
+        try:
+            matfile = loadmat(filepath)
+            matfile.pop('__header__')
+            matfile.pop('__version__')
+            matfile.pop('__globals__')
 
-                        if re.match(re_x, k):
-                            matfile_dictx.update({k: v_sq})
-                        elif re.match(re_y, k):
-                            matfile_dicty.update({k: v_sq})
-                        else:
-                            matfile_dict.update({k: v_sq})
+            # k: 'Hsig_20040101_030000' or 'Windx_20040106_120000', etc
+            # v: 'array([-22.5, -18.0, -36.7, ...])' for all 177495 nodes
+            for k, v in matfile.items():
+                v_sq = np.squeeze(v)
+                ts = k[-15:]
+                date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
 
-                    if len(matfile_dict) == 0:
-                        self.matfiles[mfilename[:-4]+"X"] = matfile_dictx
-                        self.matfiles[mfilename[:-4]+"Y"] = matfile_dicty
-                    else:
-                        self.matfiles[mfilename[:-4]] = matfile_dict
+                timestep_keys.append(date)
 
-                    ttt = self.timesteps
-                    kkk = timestep_keys
-                    ttt.extend(kkk)
-                    ttt = sorted(list(set(ttt)))
-                    self.timesteps = ttt
+                if re.match(re_x, k):
+                    matfile_dictx.update({k: v_sq})
+                elif re.match(re_y, k):
+                    matfile_dicty.update({k: v_sq})
+                else:
+                    matfile_dict.update({k: v_sq})
 
-                except NotImplementedError as e:
-                    print(f"{e}!")
+            if len(matfile_dict) == 0:
+                self.matfile1[mfile+"X"] = matfile_dictx
+                self.matfile2[mfile+"Y"] = matfile_dicty
+            else:
+                self.matfile1[mfile] = matfile_dict
+
+            self.start_date = timestep_keys[0]  # first timestep in the month
 
 
-        # update timesteps in input template
-        self.master_input["nca"]["dimensions"]["ntime"] = len(self.timesteps)
+        except NotImplementedError as e:
+            print(f"{e}!")
+
+
 
     # ===================== below not needed anymore?
     def sort_coords(self):
@@ -355,7 +365,7 @@ class NodeMap:
 
 
 
-    def load_mats(self, year="", month=""):
+    def upload_mats(self): #, start_year="", start_month=""):
         """
         - Pseudocode -
 
@@ -369,25 +379,54 @@ class NodeMap:
                 write latest timestep to 'startdate.txt'
 
         """
-        print(f"*** loading mat data")
+
+        # to store time step. wont close if run is interrupted, but will still have the updated info
+        sd = open("startdate.txt", "w+")
+
+        print(f"(upload_mats)")
         data_folder = self.data_folder
-        if year:
-            if month:  # .mat files for one month
-                results = os.path.join(data_folder, year, month, "results")
-            else:  # .mat files for all months of one year
-                results = os.path.join(data_folder, year)
 
-            self.load_mat(results)
-        else:  # .mat files for ALL months from ALL years
-            for year in os.listdir(data_folder):
-                if year != 'Mesh' and not year.startswith('.') and os.path.isdir(year):  # avoid '.DS_Store' file
-                    for month in os.listdir(data_folder + "/" + year):
+        # start date should continue from the month where the upload stopped
+        search_year = self.start_year == "" # false if start_year is set. NodeMap sets these initially
+        search_month = self.start_month == "" # false if start_month is set
+
+        reloading = search_year != "" # for grid data, upload_to_cache
+
+
+
+        for year in sorted(os.listdir(data_folder)):
+            if year != 'Mesh' and not year.startswith('.') and os.path.isdir(data_folder + "/" + year):  # avoid '.DS_Store' file
+                #print("  ", year)
+                if not search_year:  # skip through until year is found
+                    if year != self.start_year: continue
+                    else: search_year = True
+                for month in sorted(os.listdir(data_folder + "/" + year)):
+                    if not month.startswith('.') and os.path.isdir(data_folder + "/" + year + "/" + month):
+                        #print("    ", month)
+                        if not search_month:  # skip through until month is found
+                            if month != self.start_month: continue
+                            else: search_month = True
                         results = os.path.join(data_folder, year, month, "results")
-                        self.load_mat(results)  # loads everything into node_map.matfiles and node_map.timesteps
+                        mfiles = [name for name in os.listdir(results)]  # e.g. ['HS.mat'] or ['HS.mat', 'WIND.mat', ... ]
+                        for mfilename in mfiles:
+                            if re.match(re_mat, mfilename) or re.match(re_mat_test, mfilename):
+                                mfilepath = os.path.join(data_folder, year, month, "results", mfilename)
 
-        #print("*** creating nca template and adding timesteps")
-        #self.master_input["nca"]["dimensions"]["ntime"] = len(self.timesteps)
+                                # new mat file updates self.start_date
+                                self.load_mat(mfilepath, mfilename)
 
+                                # creates NetCDF2D object.
+                                # if reloading, update static mesh data, including timesteps, to template first.
+                                # then, write matfile data (dimensionless or with X and Y) to NetCDF2D object
+                                self.upload_to_cache(reloading)
+                                reloading = False
+
+                        # store start date
+                        sd.seek(0)
+                        sd.write(str(self.start_date))
+                        sd.truncate()
+
+        sd.close()
 
 
 
@@ -415,7 +454,7 @@ class NodeMap:
         dimensions = dict(
             npe=3,
             nnode=self.num_nodes,
-            ntime=0,
+            ntime=self.num_timesteps,
             nelem=self.num_elements
         )
         master_input["nca"]["dimensions"] = dimensions
@@ -449,7 +488,7 @@ class NodeMap:
         self.master_input = master_input
 
 
-    def upload(self):
+    def upload_to_cache(self, reloading):
         """
             A NetCDF2D object is created with the finished template and the contents from the node map
                 are written to the NetCDF2D object one timestep at a time.
@@ -457,24 +496,61 @@ class NodeMap:
 
             upload_to_cache then empties both self.matfile1 and self.matfile2 --> {} for the next upload
         """
-        print("- Upload -")
-        print("*** initializing NetCDF2D object")
         netcdf2d = NetCDF2D(self.master_input)
 
-        print("*** loading nca data into NetCDF2D object")
-        for kvar, val in self.temp_var_names.items(): #TEMPORAL_VARIABLES.items():
-            MAT_val = val['matfile name']
-            if MAT_val in self.matfiles:
-                for kv, n in self.matfiles[MAT_val].items():
-                    ts = kv[-15:]
-                    date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
-                    i = self.timesteps.index(date)
-                    try:
-                        netcdf2d["s", kvar, i] = n
-                    except ValueError:
-                        raise
+        # static data. if not reloading (e.g. after session interruption), don't need again
+        # ---------------------------
+        if reloading:
+            print("  (upload_to_cache) adding static data... ")
+            netcdf2d.nca.variables["lat"][:] = self.lat
+            netcdf2d.nca.variables["lon"][:] = self.lon
+            netcdf2d.nca.variables["elem"][:] = self.elements
+            netcdf2d.nca.variables["b"][:] = self.bathymetry
 
-        print("*** NetCDF2d created and shipped")
+            for t, ts in enumerate(self.timesteps):
+                netcdf2d.nca.variables["time"][t] = date2num(
+                    self.timesteps[t],
+                    units="hours since 1970-01-01 00:00:00.0",
+                    calendar="gregorian"
+                )
+        # ---------------------------
+
+        MAT_val1, MAT_val2 = "", ""
+        variable1, variable2 = "", ""
+        MAT_val1 = list(self.matfile1.keys())[0]
+        if self.matfile2:
+            MAT_val2 = list(self.matfile2.keys())[0]
+
+        for kvar, val in self.temp_var_names.items():
+            if val["matfile name"] == MAT_val1:
+                print("  (upload_to_cache)", val["matfile name"], ":", kvar)
+                variable1 = kvar
+            if val["matfile name"] == MAT_val2 and MAT_val2 != "":
+                print("  (upload_to_cache)", val["matfile name"],":", kvar)
+                variable2 = kvar
+
+        for kv, n in self.matfile1[MAT_val1].items():
+            ts = kv[-15:]
+            date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
+            i = self.timesteps.index(date) # getting the index for that timestep
+            try:
+                netcdf2d["s", variable1, i] = n
+            except ValueError:
+                raise
+
+        if self.matfile2:
+            for kv, n in self.matfile2[MAT_val2].items():
+                ts = kv[-15:]
+                date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
+                i = self.timesteps.index(date)
+                try:
+                    netcdf2d["s", variable2, i] = n
+                except ValueError:
+                    raise
+
+        # erase for the next .mat file in the current month folder
+        self.matfile1 = {}
+        self.matfile2 = {}
 
 
 
@@ -636,29 +712,24 @@ def main(*args):
     args = args[0]
     args.pop(0)
 
-    args = args[0]  # get rid of parentheses
+    i, start_year, start_month, reloading = 0, "", "", False
 
-    i = 0
-    uploading = re.match(re_upload, args[i]) is not None
-    downloading = re.match(re_download, args[i]) is not None
-
-    get_year, get_month, get_day, get_hour = "", "", "", ""
-    i += 1
-    if not re.match(re_year, args[i]) and not re.match(re_month, args[i]):  # if data folder path
-        if os.path.isdir(args[i]):
-            data_folder = args[i]
+    if len(args) > i:
+        uploading = re.match(re_upload, args[i]) is not None
+        downloading = re.match(re_download, args[i]) is not None
         i += 1
     if len(args) > i and re.match(re_year, args[i]):
-        get_year = args[i]
+        reloading = True
+        start_year = args[i]
         i += 1
     if len(args) > i and re.match(re_month, args[i]):
-        get_month = args[i]
+        start_month = args[i]
         i += 1
 
     if uploading:
-        nm = NodeMap()
-        nm.load_mats(get_year, get_month) # get_var?
-        nm.upload()
+        nm = NodeMap() #reloading)
+        nm.upload_mats() #start_year, start_month) # should be automatic? read from cache? or save to a txt file
+
 
     elif downloading:
         nm = NodeMap()

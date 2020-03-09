@@ -10,24 +10,33 @@
 
 import sys, os
 import json
+import re
 import datetime
 import inspect
 import pytest
 import pprint as pp
+from scipy.io import loadmat
+import pandas as pd
+from tqdm import tqdm
 from netCDF4 import Dataset
 from netCDF4 import num2date, date2num
 from datetime import datetime
 from netcdfswan import NodeMap
+from src import spectra
 from s3netcdf import NetCDF2D
 import numpy as np
 from s3netcdf.netcdf2d_func import createNetCDF, NetCDFSummary,\
   createVariables,getChildShape,getMasterShape,parseDescritor,\
   getIndices,getMasterIndices,getPartitions,dataWrapper
 
+re_mat_test = re.compile(r"(WIND_6hr|HS_6hr|HS_)[.]mat")  # separate test from actual?
+re_mat = re.compile(r"(WIND|HS|TPS|TMM10|TM01|TM02|PDIR|DIR|DSPR|QP|TRANSP)[.]mat")
+re_x = re.compile(r"^.*_x_")
+re_y = re.compile(r"^.*_y_")
 
 #  Incremental testing, each one adds a step
 
-def test_read_from_cache():
+def ttest_read_from_cache():
     with open("../read_master.json") as rm:
         input_read = json.load(rm)
     try:
@@ -39,7 +48,7 @@ def test_read_from_cache():
 def test_delete_cache():
     # only works if data has been put in.
     # can't delete after cache has already been deleted
-    with open("../read_master.json") as rm:
+    with open("../jsons/read_master.json") as rm:
         input_read = json.load(rm)
     try:
         netcdf2d_read = NetCDF2D(input_read)
@@ -53,7 +62,7 @@ test_year_month = [('2004', '01'), ('2004', None), (None, None)]
 
 
 @pytest.mark.parametrize("test_year, test_month", test_year_month)
-def test_netcdf2d_static_no_temporal_data(test_year, test_month):
+def ttest_netcdf2d_static_no_temporal_data(test_year, test_month):
 
     # load static static data into node map and create nca template
     nm_mesh = NodeMap()
@@ -66,8 +75,9 @@ def test_netcdf2d_static_no_temporal_data(test_year, test_month):
 
     nm_from_mats = NodeMap()
     nm_from_mats.load_mats(test_year, test_month)
+    print(nm_from_mats.master_input['nca']['dimensions'])
+    #assert nm_from_mats.master_input['nca']['dimensions'] == {'npe': 3, 'nnode': 177945, 'ntime': 6, 'nelem': 348364}
 
-    assert nm_from_mats.master_input['nca']['dimensions'] == {'npe': 3, 'nnode': 177945, 'ntime': 7, 'nelem': 348364}
 
     netcdf2d_ = NetCDF2D(nm_from_mats.master_input)
 
@@ -79,8 +89,8 @@ def ttest_netcdf2d_HS_then_WIND():
 
     netcdf2d_temporal_HS()
     print("HS loaded")
-    netcdf2d_temporal_WIND()
-    print("WIND loaded")
+    #netcdf2d_temporal_WIND()
+    #print("WIND loaded")
 
 
 # do below two tests one after the other
@@ -95,10 +105,10 @@ def netcdf2d_temporal_HS():
     # ----------------------
     print("- Upload -")
     print("*** initializing NetCDF2D object")
-    netcdf2d = NetCDF2D(nm_from_mats.read_template)
+    netcdf2d = NetCDF2D(nm_from_mats.master_input)
 
     print("*** loading nca data into NetCDF2D object")
-    for kv, n in nm_from_mats.matfiles['HS_6hr'].items():
+    for kv, n in tqdm(nm_from_mats.matfiles['HS_6hr'].items()):
         ts = kv[-15:]
         date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
         i = nm_from_mats.timesteps.index(date)
@@ -119,7 +129,7 @@ def netcdf2d_temporal_WIND():
     # ----------------------
     print("- Upload -")
     print("*** initializing NetCDF2D object")
-    netcdf2d = NetCDF2D(nm_from_mats.read_template)
+    netcdf2d = NetCDF2D(nm_from_mats.master_input)
 
     print("*** loading nca data into NetCDF2D object")
     for kv, n in nm_from_mats.matfiles['WIND_6hrX'].items():
@@ -132,33 +142,98 @@ def netcdf2d_temporal_WIND():
     # ----------------------
 
 
-@pytest.mark.parametrize("test_year, test_month", test_year_month)
-def test_netcdf2d(test_year, test_month):
+
+
+
+
+
+
+# moment of truth...
+def test_HS_large():
+    # half a gigabyte
+
     nm = NodeMap()
-    nm.load_mats(test_year, test_month)  # get_var?
+    nm.load_mats('2004', '01')
+
+
+    # 'overriding' nm_from_mats.upload()
+    # ----------------------
+    print("- Upload -")
+    print("*** initializing NetCDF2D object")
+    netcdf2d = NetCDF2D(nm.master_input)
+
+    print("*** loading nca data into NetCDF2D object")
+    for kv, n in tqdm(nm.matfiles['HS_'].items()):
+        ts = kv[-15:]
+        date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
+        i = nm.timesteps.index(date)
+        netcdf2d["s", "hs", i] = n
+
+    print("*** NetCDF2d created and shipped")
+    # ----------------------
+
+
+
+
+def test_netcdf2d():
+    nm = NodeMap()
+    nm.upload_mats()
+
+
+
+@pytest.mark.parametrize("test_year, test_month", test_year_month)
+def test_netcdf2d_old(test_year, test_month):
+    nm = NodeMap()
+    nm.load_mats(test_year, test_month)
     nm.upload()
 
 
+def ttest_netcdf2d_read_completed_cache():
 
-def test_netcdf2d_read_completed_cache():
-
-    print("attempting to read NetCDF2D object from cache (has both static and temporal data)")
+    print("attempting to read NetCDF2D object from cache")
     with open("../read_master.json") as rm:
         read_input = json.load(rm)
-    netcdf2d_read_only = NetCDF2D(read_input)
-    print("Summary:")
-    pp.pprint(netcdf2d_read_only.info())
+    netcdf2d = NetCDF2D(read_input)
+    #print("Summary:")
+    #pp.pprint(netcdf2d_read_only.info())
 
     print("\nReading NetCDF2D object...\n")
-    try:
-        print("*    significant wave height of nodes in 4th timestep:", netcdf2d_read_only["s", "hs", 3])
-    except:
-        pass
-    try:
-        print("*    wind x velocity of nodes in first timestep:", netcdf2d_read_only["s", "u10", 0])
-    except:
-        pass
+    t = 3
+    n = 100778
+
+
+
+    # need to read what the timestep is
+    print(f"*    significant wave height of node {n} at time {t}:\n", netcdf2d["s", "hs", t, n])
+    print(f"*    wind x of node {n} at time {t}:\n", netcdf2d["s", "u10", t, n])
+    #pp.pprint(dir(netcdf2d_read_only))
+    #pp.pprint(dir(netcdf2d_read_only.nca.variables["time"))
+
+    print("static data:")
+    print("----time")
+    for tt in netcdf2d.nca.variables["time"]:
+
+        print(num2date(tt, units="hours since 1970-01-01 00:00:00.0", calendar="gregorian"))
+
+    print("----lat")
+    print(netcdf2d.nca.variables["lat"][:20])
+    print("----lon")
+    print(netcdf2d.nca.variables["lon"][:20])
+    print("----b")
+    print(netcdf2d.nca.variables["b"][:20])
+    print("----elem")
+    print(netcdf2d.nca.variables["elem"][:20])
+
+
+    #for tt in netcdf2d_read_only.nca.variables["time"]:
+    #    print(tt)
+    #print(netcdf2d_read_only.groups["s"].attributes["hs"])
+    #print(f"actual time:", netcdf2d_read_only["s", "t"])
+    # print("*    wind x velocity of nodes in first timestep:", netcdf2d_read_only["s", "u10", 0])
+
     #print("*** finished ***")
+
+
 
 
 
@@ -331,30 +406,173 @@ def ttest_download(year, month, day, ntime, nnode, var):
     # ******* test creating visual map
 
 
+
+def test_get_timesteps():
+    tstart = 298032 # date2num("2004-01-01 00:00:00", units="hours since 1970-01-01 00:00:00.0", calendar="gregorian")
+    tend = tstart + 116064 #date2num("2018-01-01 00:00:00", units="hours since 1970-01-01 00:00:00.0", calendar="gregorian")
+    #for t in range(0, 116064):
+    #    d = num2date(tstart + t, units="hours since 1970-01-01 00:00:00.0", calendar="gregorian")
+
+    #    if d.month == 2:
+    #        if d.day >= 29 and d.hour == 0:
+    #            print(d)
+    #            print(date2num(d, units="hours since 1970-01-01 00:00:00.0", calendar="gregorian"))
+
+        #print(type(d))
+
+    ts = [num2date(298032 + t, units="hours since 1970-01-01 00:00:00.0", calendar="gregorian") for t in range(116064)]
+
+    #print(timesteps[0], timesteps[1], timesteps[-2], timesteps[-1])
+
+
+def mat_table(filename):
+
+    mfile = re.search(re_mat, filename).groups()[0]  # remove 'test' when ready
+    #print(filename, "-->", mfile)
+    matfile_dictx = {}
+    matfile_dicty = {}
+    try:
+        matfile = loadmat(filename)
+        matfile.pop('__header__')
+        matfile.pop('__version__')
+        matfile.pop('__globals__')
+        for k, v in matfile.items():
+            v_sq = np.squeeze(v)
+            if re.match(re_x, k):
+                matfile_dictx.update({k: v_sq})
+            elif re.match(re_y, k):
+                matfile_dicty.update({k: v_sq})
+            else:
+                matfile_dictx.update({k: v_sq})
+    except NotImplementedError as e:
+        print(f"{e}!")
+
+    mf1pd = pd.DataFrame.from_dict(matfile_dictx)
+    mf2pd = pd.DataFrame.from_dict(matfile_dicty)
+    return mf1pd, mf2pd
+
+
+
+
+def test_compare_values(matfile, var1, var2=""):
+
+
+    #matfile = 'data/2004/01/results/'+matfile
+    matfile = '../BCSWANv5/2004/01/results/' + matfile
+
+    with open("../jsons/variable_names.json") as vnames:  # !!! remove 'test' when finished
+        temp_var_names = json.load(vnames)
+
+    START = datetime(2004, 1, 1, 0, 0)
+    iSTART = date2num(START, units="hours since 1970-01-01 00:00:00.0", calendar="gregorian")
+    #print("START value:", iSTART)
+
+    mt1, mt2 = mat_table(matfile)
+    #print(mt1.head())
+    #print(mt2.head())
+
+    # timesteps: first, middle, last, and the two steps between them
+    #print(mt1.shape)
+    t1 = [0, int(mt1.shape[1]//4), int(mt1.shape[1]//2), int(3*mt1.shape[1]//4), mt1.shape[1]-1]
+    t2 = [0, int(mt2.shape[1]//4), int(mt2.shape[1]//2), int(3*mt2.shape[1]//4), mt2.shape[1]-1]
+
+    nodes = [0, 1, 2, 10, 8000, 20000, 177000, 177944, -1]
+    #print(mt1.columns[0][:-15], ":")
+    for t in t1:
+        ts = mt1.columns[t][-15:]
+        date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
+        iDate = date2num(date, units="hours since 1970-01-01 00:00:00.0", calendar="gregorian")
+        diff = int(abs(iDate - iSTART))
+        i_nc = int(diff//2)
+        part = int(diff%2)  # either 1 or 2. this is based on current partition shape. might change for other data
+        ncfile = f"SWANv5_s_{var1}_{i_nc}_0.nc"
+        ncpath = "../s3/SWANv5/s/"+ncfile
+
+        with Dataset(ncpath, "r") as src_file:
+            #print(len(src_file.variables[var1][:]))
+            #print(src_file.variables[var1][:][:])
+            #print(src_file.variables[var1][0])
+            #print(src_file.variables[var1][0][:])
+            #print(src_file.variables[var1][0][:][part])
+            #print(src_file.variables[var1][:][part][node])
+            #print(src_file.variables[var1][:][part][node])
+            for n in nodes:
+                nc_value = src_file.variables[var1][:][part][n]
+                mt_value = mt1.iloc[n][mt1.columns[t]]
+                assert nc_value == mt_value
+                #print(src_file.variables[var1][:][part][n], mt1.iloc[n][mt1.columns[t]]) #
+                #print()
+                #print(f"{mt1.columns[t]}, node {n}...ncfile: {nc_value}, matfile: {mt1.iloc[n][mt1.columns[t]]}")
+        #print()
+
+    print("--------")
+    if var2:
+        for t in t2:
+            ts = mt2.columns[t][-15:]
+            date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
+            iDate = date2num(date, units="hours since 1970-01-01 00:00:00.0", calendar="gregorian")
+            diff = int(abs(iDate - iSTART))
+            i_nc = int(diff//2)
+            part = int(diff%2)  # either 1 or 2
+            ncfile = f"SWANv5_s_{var2}_{i_nc}_0.nc"
+            ncpath = "../s3/SWANv5/s/"+ncfile
+            with Dataset(ncpath, "r") as src_file:
+                for n in nodes:
+                    nc_value = src_file.variables[var2][:][part][n]
+                    mt_value = mt2.iloc[n][mt2.columns[t]]
+                    assert nc_value == mt_value
+                    #print(f"{mt2.columns[t]}, node {n}...ncfile: {nc_value}, matfile: {mt2.iloc[n][mt2.columns[t]]}")
+            #print()
+
+
+    #print("--------")
+
+
+
+
+
+
+
+
 if __name__ == "__main__":
     args = sys.argv
     #main(args)
     #test_read_from_cache()
 
+    #test_get_timesteps()
+
     #test_delete_cache()
+    #test_netcdf2d()
+    #print("======================== did it work?")
+    #ttest_netcdf2d_read_completed_cache()
 
-    #test_netcdf2d_static_no_temporal_data('2004', '01')
+    #ttest_netcdf2d_static_no_temporal_data('2004', '01') # obsolete
 
-    #test_netcdf2d_temporal_data('2004', '01')
+    #test_netcdf2d_temporal_data('2004', '01') # obsolete
 
-    #test_netcdf2d_HS_then_WIND()
+    #ttest_netcdf2d_HS_then_WIND() #obsolete
 
-    test_netcdf2d('2004', '01')
-    #test_netcdf2d_read_completed_cache()
+    #test_compare_values('WIND_6hr.mat', "u10", "v10")
+    #test_compare_values('HS_6hr.mat', "hs")
 
-    test_shapes()
+    test_compare_values("WIND.mat", "u10", "v10")
+    test_compare_values("HS.mat", "hs")
+    test_compare_values("QP.mat", "qp")
 
-    test_compare_shapes('SWANv5_s_u10_3_0.nc', 'WIND_6hrX.mat')
+    #test_shapes()
+
+    #test_compare_shapes('SWANv5_s_u10_3_0.nc', 'WIND_6hrX.mat')
     #for (nc, mt) in test_nc_against_mat:
     #    test_compare_shapes(nc, mt)
 
     #print("\n\n- Download Test -")
     #test_download(2004, 1, 1, 0, 0, "hs")
 
-    #for (y, m, d, f, t, v) in test_time_start_end:
-    #    test_download(y, m, d, f, t, v)
+    #spectra.scan_spectra("../BCSWANv5/2004/01/results/notest/hotspots.spc")
+    #spectra.scan_spectra("../BCSWANv5/2004/01/results/notest/line_n.spc")
+    #spectra.scan_spectra("../BCSWANv5/2004/01/results/notest/line_s.spc")
+    #spectra.scan_spectra("../BCSWANv5/2004/01/results/notest/line_w.spc")
+    #----------
+    #test_HS_large()
+
+    print("*** finished testing")

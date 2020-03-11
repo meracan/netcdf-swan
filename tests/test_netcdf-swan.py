@@ -22,7 +22,7 @@ from netCDF4 import Dataset
 from netCDF4 import num2date, date2num
 from datetime import datetime
 from netcdfswan import NodeMap
-from src import spectra
+from tests import test_spectra
 from s3netcdf import NetCDF2D
 import numpy as np
 from s3netcdf.netcdf2d_func import createNetCDF, NetCDFSummary,\

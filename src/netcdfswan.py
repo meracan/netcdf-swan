@@ -99,7 +99,11 @@ except ModuleNotFoundError:
 
 # regex for possible matlab file names.
 re_mat = re.compile(r"(WIND|HS|TPS|TMM10|TM01|TM02|PDIR|DIR|DSPR|QP|TRANSP)[.]mat")
-re_spc = re.compile(r"()[.]spc")
+re_spc = re.compile(r"(c_dixon|c_eliz|campbell|e_dell|hotspots|line_n|line_s|line_w|m_nomad|"
+                    r"n_hecat|ne_isle|neah|p_renf|perouse|s_hecat|s_morsb|s_nomad|sombrio|"
+                    r"sooke|tarbotn|tillamk|tofino|w_dixon|w_morsb|w_otter|w_washn)[.]spc")
+
+re_spcdate = re.compile(r"^20[0-9]{6}[.][0-9]{6}$")
 re_mat_test = re.compile(r"(WIND_6hr|HS_6hr|HS_)[.]mat")  # separate test from actual?
 
 re_ele = re.compile(r".+[.]ele")
@@ -136,9 +140,12 @@ class NodeMap:
         self.boundary_markers = None
         self.matfile1 = {}
         self.matfile2 = {}
+        self.spcfile = {}
+        self.afreqs = []
+        self.ndir = []
         self.elements = None
         self.timesteps = []
-        self.start_date = 0
+        self.start_date = ""
         self.start_year = ""
         self.start_month = ""
         self.bathymetry = []
@@ -152,12 +159,14 @@ class NodeMap:
             self.mesh_folder = self.master_input["file paths"]["mesh folder"]
             self.data_folder = self.master_input["file paths"]["data folder"]
 
+        # below could be optional if this class is used more generally/universally
         self.load_mesh()
         self.load_timesteps()  # user specified (?) if interruption, will need to read from s3 first.
         self.create_nca_input()  # timesteps can go in here now that all of them are 'loaded'
 
     def load_timesteps(self):
-        # temporary solution:
+
+        # tentative solution:
         if os.path.exists("startdate.txt"):
             with open("startdate.txt", "r") as sd:
                 self.start_date = sd.readline()
@@ -223,7 +232,7 @@ class NodeMap:
         return z
 
 
-    def load_mat(self, filepath, mname):
+    def load_mat(self, filepath, mfile):
         """
             Loads one mat file into self.matfile1 and self.matfile2 if there are both X and Y coordinates
             (e.g. WIND.mat), otherwise just stores into self.matfile1.
@@ -242,8 +251,15 @@ class NodeMap:
         """
         timestep_keys = []
 
-        print(f" (load_mat) reading from {filepath}")
-        mfile = re.match(re_mat, mname).groups()[0] # remove 'test' when ready <------
+        #print(f" (load_mat) reading from {filepath}")
+        mname = re.match(re_mat, mfile).groups()[0] # remove 'test' when ready <------
+
+        # mname: HS
+        # mfile: HS.mat
+        # filepath: ../BCSWANv5/2004/01/results/HS.mat
+
+
+
         matfile_dict = {}
         matfile_dictx = {}
         matfile_dicty = {}
@@ -259,9 +275,8 @@ class NodeMap:
             for k, v in matfile.items():
                 v_sq = np.squeeze(v)
                 ts = k[-15:]
-                date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
-
-                timestep_keys.append(date)
+                timestep = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
+                timestep_keys.append(timestep)
 
                 if re.match(re_x, k):
                     matfile_dictx.update({k: v_sq})
@@ -271,16 +286,120 @@ class NodeMap:
                     matfile_dict.update({k: v_sq})
 
             if len(matfile_dict) == 0:
-                self.matfile1[mfile+"X"] = matfile_dictx
-                self.matfile2[mfile+"Y"] = matfile_dicty
+                self.matfile1[mname+"X"] = matfile_dictx
+                self.matfile2[mname+"Y"] = matfile_dicty
             else:
-                self.matfile1[mfile] = matfile_dict
+                self.matfile1[mname] = matfile_dict
 
             self.start_date = timestep_keys[0]  # first timestep in the month
 
 
         except NotImplementedError as e:
             print(f"{e}!")
+
+
+    def load_spc(self, filepath, sfile):
+        """
+            spectra files are stored as .txt instead of .mat
+
+            number of timesteps:
+                - equal to month, same as mat files.
+
+                number of FACTOR blocks for that timestep:
+                    - equal to number of lat+lon nodes (e.g. 22 pairs)
+
+                    create table for that FACTOR block:
+                        - columns are each direction (e.g. 36 across)
+                        - rows are each frequency (e.g. 34 down)
+
+            performance issue: dictionaries vs numpy arrays? mix? or use one over the other?
+        """
+        timestep_keys = []
+
+        #print(f" (load_spc) reading from {filepath}")
+        sname = re.match(re_spc, sfile).groups()[0]
+
+        s = open(filepath, "r")
+        #print("---------------------------------------")
+
+        lonlats = []
+        afreqs = []
+        dirs = []
+        num_lonlat, num_afreq, num_dir = 0., 0., 0.
+
+        spcfile = {}
+
+        metadata = True
+        while metadata:
+            line = s.readline()
+            token = line.split()[0]
+
+            if token == "LONLAT":
+                num_lonlat = int(s.readline().split()[0])
+                for ll in range(num_lonlat):
+                    lonlat = s.readline().split()
+                    lonlats.append((lonlat[0], lonlat[1]))
+                #print("LONLAT ->", num_lonlat)
+
+            elif token == "AFREQ":
+                num_afreq = int(s.readline().split()[0])
+                for af in range(num_afreq):
+                    afreq = s.readline().split()[0]
+                    afreqs.append(afreq)
+                #print("AFREQ ->", num_lonlat)
+
+            elif token == "NDIR":
+                num_dir = int(s.readline().split()[0])
+                for d in range(num_dir):
+                    dir = s.readline().split()[0]
+                    dirs.append(dir)
+                #print("NDIR ->", num_dir)
+
+            elif re.match(re_spcdate, token):
+                metadata = False
+
+        self.afreqs = afreqs
+        self.ndir = dirs
+        # some more info between above and tables below
+
+        data = True
+        while data:
+            token = line.split()[0]
+            if re.match(re_spcdate, token):
+                timestep = datetime(int(token[:4]), int(token[4:6]), int(token[6:8]), int(token[9:11]))
+                timestep_keys.append(timestep)
+
+                lldict = {}
+                for lonlat in lonlats:
+                    FACTOR = s.readline().split()[0].strip()
+
+                    if FACTOR == "NODATA":  # no data for this lat-long
+                        continue
+
+                    factor = s.readline().split()[0].strip()
+                    factor = float(factor)
+
+                    fd = np.array(
+                        [np.array([int(d) for d in s.readline().split()]) for afreq in range(num_afreq)]
+                    )
+                    lldict[lonlat] = (factor, fd)
+                spcfile[timestep] = lldict
+            else:
+                print("something went wrong!")
+                data = False
+
+            line = s.readline()  # ready next line
+            if not line:
+                #print("no line!")
+                data = False
+
+        #print("---------------------------------------")
+        s.close()
+
+        self.start_date = timestep_keys[0]  # first timestep in the month
+        self.spcfile = spcfile
+
+
 
 
 
@@ -365,7 +484,7 @@ class NodeMap:
 
 
 
-    def upload_mats(self): #, start_year="", start_month=""):
+    def upload_files(self): #, start_year="", start_month=""):
         """
         - Pseudocode -
 
@@ -373,17 +492,22 @@ class NodeMap:
         for each year:
             for each month:
                 for each .mat (and .spc) file:
-                    load .mat file into the Node Map (e.g. HS.mat)
+                    load .mat file and first timestep into the Node Map (e.g. HS.mat, line_n.spc)
                     use s3-netcdf package to partition the data and store in the cache
                     set reloading to false to prevent mesh data from loading again (only need to do once)
                 write latest timestep to 'startdate.txt'
+
+
+        both mat and spc files will be in the folder, but the mat files are 'prioritized'...
+            if spc files are read first, will have timesteps but the number of nodes will be completely different and
+            not part of the template
 
         """
 
         # to store time step. wont close if run is interrupted, but will still have the updated info
         sd = open("startdate.txt", "w+")
 
-        print(f"(upload_mats)")
+        #print(f"(upload_files)")
         data_folder = self.data_folder
 
         # start date should continue from the month where the upload stopped
@@ -434,8 +558,6 @@ class NodeMap:
         """
         Creates an 'nca' structure for the master input template (json) using the swan mesh data.
         No variable data is loaded yet.
-
-        Information stored in another .json file
         """
 
         master_input = self.master_input
@@ -450,7 +572,6 @@ class NodeMap:
         )
         master_input["metadata"] = metadata
 
-        # no timesteps (ntime) in the static nc file, will be updated as more temporal nc files are created
         dimensions = dict(
             npe=3,
             nnode=self.num_nodes,
@@ -645,68 +766,8 @@ class NodeMap:
 
 def main(*args):
     """
-        changed load_mat to only get one matfile at a time, then uploading.
-        Python only has a limited memory capacity, and since each mat file is just over half a gigabyte,
-        the matfiles = {} dictionary will not be able to hold all of the information:
-
-            0 - mesh data only needs to be read once, when calling NodeMap() for the first time.
-
-            upload_mats():
-              for year in years:
-                for month in months:
-                  1 - load ONE mat file in the NodeMap (e.g. HS.mat)
-                  3 - upload mat file to the cloud
-                  4 - delete mat file from nodemap
-                  5 - start from step 1 with NEW mat file (e.g. WIND.mat)
-
-        After a mat file is loaded into the node map, meta data is put into an input template for the
-        master nc file (.nca). The .nca file template is then updated with the timesteps that
-        were extracted from the .mat data.
-
-
-        should have parameter to indicate where to continue from if upload is interrupted
-        In this case the folders are assumed to be extracted from in chronological order.
-
-        might make more sense if folder path doesn't need to be specified....
-
-        if one of the variables fails to upload, whole month should be re-uploaded again (not too inconvenient)
-        basically, can start from any year or month of a year and upload from those onward
-
-
-        if upload does get interrupted, should be able to detect where it left off automatically
-            based on timestep information in the nca file
-        (User parameters)
-
-
-        If a year and month are specified, will search the results folder just in that month:
-            $ netcdf-swan.py upload <data folder path> <year> <month>
-
-        Otherwise, will look in the results folder for each month of the year if only that year is specified:
-            $ netcdf-swan.py upload <data folder path> <year>
-
-        Otherwise if no path is specified, ALL results folders will be searched (default: no arguments or '.' means
-            search current directory):
-            $ netcdf-swan.py upload <data folder path>
-                OR
+        from the command line
             $ netcdf-swan.py upload
-
-        e.g. To find the 'results' data folder in January of 2004 in the current directory:
-            $ python3 netcdf-swan.py . 2004 01
-
-        :param args:
-            <upload/download> <folder path> <year> <month> ...
-        :return:
-
-        $ python3 netcdfswan.py upload mesh  # deprecated
-
-
-        # putting in dates implies the timesteps need to be loaded again
-        $ python3 netcdfswan.py upload 2004 01
-        $ python3 netcdfswan.py upload 2004
-        $ python3 netcdfswan.py upload
-
-        $ python3 netcdfswan.py download 2007 04 hs # dont worry about until after
-
     """
     # get rid of parentheses and script name
     args = args[0]
@@ -728,7 +789,8 @@ def main(*args):
 
     if uploading:
         nm = NodeMap() #reloading)
-        nm.upload_mats() #start_year, start_month) # should be automatic? read from cache? or save to a txt file
+        nm.upload_files() #start_year, start_month) # should be automatic? read from cache? or save to a txt file
+
 
 
     elif downloading:

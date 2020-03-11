@@ -62,7 +62,7 @@
     create node map first, then upload the .mat files:
 
     nm = NodeMap()
-    nm.upload_mats()
+    nm.upload_files()
 
 
     ...
@@ -80,7 +80,7 @@
 
 """
 import json
-import os, sys
+import os, sys, time
 import numpy as np
 import re
 import pprint as pp
@@ -126,7 +126,7 @@ re_month = re.compile(r"^(0?[1-9]|1[0-2])$")
 
 class NodeMap:
 
-    def __init__(self, reloading=False):
+    def __init__(self):
         """ 1. reads and stores .ele, .bot, and .node data in the Mesh folder
             2. creates timesteps based on the earliest and latest possible times in the dataset.
             3. creates the nca template using the mesh and time information
@@ -484,7 +484,7 @@ class NodeMap:
 
 
 
-    def upload_files(self): #, start_year="", start_month=""):
+    def upload_files(self):
         """
         - Pseudocode -
 
@@ -494,7 +494,6 @@ class NodeMap:
                 for each .mat (and .spc) file:
                     load .mat file and first timestep into the Node Map (e.g. HS.mat, line_n.spc)
                     use s3-netcdf package to partition the data and store in the cache
-                    set reloading to false to prevent mesh data from loading again (only need to do once)
                 write latest timestep to 'startdate.txt'
 
 
@@ -503,47 +502,60 @@ class NodeMap:
             not part of the template
 
         """
+        #start_ = time.time()
 
-        # to store time step. wont close if run is interrupted, but will still have the updated info
+        # 'startdate.txt' stores the time step from the month where the upload stopped.
+        # a new NodeMap sets self.start_year and self.start_month initially. if reloading, upload mesh data first
         sd = open("startdate.txt", "w+")
-
-        #print(f"(upload_files)")
         data_folder = self.data_folder
+        search_year = self.start_year == ""
+        search_month = self.start_month == ""
+        reloading = search_year != ""
+        if reloading:
+            self.upload_to_cache("grid")
 
-        # start date should continue from the month where the upload stopped
-        search_year = self.start_year == "" # false if start_year is set. NodeMap sets these initially
-        search_month = self.start_month == "" # false if start_month is set
-
-        reloading = search_year != "" # for grid data, upload_to_cache
-
-
-
+        # print("BCSWANv5")
         for year in sorted(os.listdir(data_folder)):
             if year != 'Mesh' and not year.startswith('.') and os.path.isdir(data_folder + "/" + year):  # avoid '.DS_Store' file
-                #print("  ", year)
+                # print("|--", year)
                 if not search_year:  # skip through until year is found
                     if year != self.start_year: continue
                     else: search_year = True
                 for month in sorted(os.listdir(data_folder + "/" + year)):
                     if not month.startswith('.') and os.path.isdir(data_folder + "/" + year + "/" + month):
-                        #print("    ", month)
+                        # print("    |--", month)
                         if not search_month:  # skip through until month is found
                             if month != self.start_month: continue
                             else: search_month = True
                         results = os.path.join(data_folder, year, month, "results")
-                        mfiles = [name for name in os.listdir(results)]  # e.g. ['HS.mat'] or ['HS.mat', 'WIND.mat', ... ]
-                        for mfilename in mfiles:
-                            if re.match(re_mat, mfilename) or re.match(re_mat_test, mfilename):
-                                mfilepath = os.path.join(data_folder, year, month, "results", mfilename)
+                        files = [name for name in os.listdir(results)]  # e.g. ['HS.mat'] or ['HS.mat', 'WIND.mat', ... ]
+                        for filename in files:
 
-                                # new mat file updates self.start_date
-                                self.load_mat(mfilepath, mfilename)
+                            if re.match(re_mat, filename) or re.match(re_mat_test, filename):
+                                # start = time.time()
+                                # print("        |--", filename)
+                                mfilepath = os.path.join(data_folder, year, month, "results", filename)
+                                self.load_mat(mfilepath, filename)  # updates self.start_date and current mat files
 
-                                # creates NetCDF2D object.
-                                # if reloading, update static mesh data, including timesteps, to template first.
-                                # then, write matfile data (dimensionless or with X and Y) to NetCDF2D object
-                                self.upload_to_cache(reloading)
-                                reloading = False
+                                # endloadmat = time.time()
+                                # print("            |-- load_mat time:", endloadmat - start)
+                                self.upload_to_cache("mat")  # write matfile data to NetCDF2D object
+
+                                # endupload = time.time()
+                                # print("            `-- upload_to_cache time:", endupload - endloadmat)
+
+                            elif re.match(re_spc, filename):  # .spc
+                                # start = time.time()
+                                # print("        |--", filename)
+                                sfilepath = os.path.join(data_folder, year, month, "results", filename)
+                                self.load_spc(sfilepath, filename) # new spc file updates self.start_date
+
+                                # endloadspc = time.time()
+                                # print("            |-- load_spc time:", endloadspc - start)
+                                self.upload_to_cache("spc")
+
+                                # endupload = time.time()
+                                # print("            `-- upload_to_cache time:", endupload - endloadspc)
 
                         # store start date
                         sd.seek(0)
@@ -551,6 +563,8 @@ class NodeMap:
                         sd.truncate()
 
         sd.close()
+        # _end = time.time()
+        # print("Total time:", _end-start_)
 
 
 
@@ -581,17 +595,11 @@ class NodeMap:
         master_input["nca"]["dimensions"] = dimensions
 
         variables = dict(
-            lat=dict(type="float64", dimensions=["nnode"], units="degrees_north", standard_name="latitude",
-                     long_name="latitude"),
-            lon=dict(type="float64", dimensions=["nnode"], units="degrees_east", standard_name="longitude",
-                     long_name="longitude"),
-            elem=dict(type="int32", dimensions=["nelem", "npe"], units="", standard_name="elements",
-                      long_name="elements"),
-            time=dict(type="float64", dimensions=["ntime"], units="hours since 1970-01-01 00:00:00.0",
-                      calendar="gregorian",
-                      standard_name="Datetime", long_name="Datetime"),
-            b=dict(type="float32", dimensions=["nnode"], units="m", standard_name="Bathymetry",
-                   long_name="Bathymetry, m (CGVD28)")
+            lat=dict(type="float64", dimensions=["nnode"], units="degrees_north", standard_name="latitude", long_name="latitude"),
+            lon=dict(type="float64", dimensions=["nnode"], units="degrees_east", standard_name="longitude", long_name="longitude"),
+            elem=dict(type="int32", dimensions=["nelem", "npe"], units="", standard_name="elements", long_name="elements"),
+            time=dict(type="float64", dimensions=["ntime"], units="hours since 1970-01-01 00:00:00.0", calendar="gregorian", standard_name="Datetime", long_name="Datetime"),
+            b=dict(type="float32", dimensions=["nnode"], units="m", standard_name="Bathymetry", long_name="Bathymetry, m (CGVD28)")
         )
         master_input["nca"]["variables"] = variables
 
@@ -609,20 +617,21 @@ class NodeMap:
         self.master_input = master_input
 
 
-    def upload_to_cache(self, reloading):
+    def upload_to_cache(self, filetype):
         """
             A NetCDF2D object is created with the finished template and the contents from the node map
                 are written to the NetCDF2D object one timestep at a time.
-            if 'reloading' is true, that means we need to re-load all static data as well as the time steps.
+            if 'grid' is true, that means we need to re-load all static data as well as the time steps.
 
             upload_to_cache then empties both self.matfile1 and self.matfile2 --> {} for the next upload
         """
         netcdf2d = NetCDF2D(self.master_input)
 
-        # static data. if not reloading (e.g. after session interruption), don't need again
+        # grid ('static' data) if reloading (only after session interruption or initial upload)
         # ---------------------------
-        if reloading:
-            print("  (upload_to_cache) adding static data... ")
+        if filetype == "grid":
+            #print("uploading grid data to cache...")
+            #start = time.time()
             netcdf2d.nca.variables["lat"][:] = self.lat
             netcdf2d.nca.variables["lon"][:] = self.lon
             netcdf2d.nca.variables["elem"][:] = self.elements
@@ -634,45 +643,54 @@ class NodeMap:
                     units="hours since 1970-01-01 00:00:00.0",
                     calendar="gregorian"
                 )
+
+            #end = time.time()
+            #print("`-- grid upload time:", end-start, "\n")
         # ---------------------------
 
-        MAT_val1, MAT_val2 = "", ""
-        variable1, variable2 = "", ""
-        MAT_val1 = list(self.matfile1.keys())[0]
-        if self.matfile2:
-            MAT_val2 = list(self.matfile2.keys())[0]
+        elif filetype == "mat":
+            MAT_val1, MAT_val2 = "", ""
+            variable1, variable2 = "", ""
+            MAT_val1 = list(self.matfile1.keys())[0]
+            if self.matfile2:
+                MAT_val2 = list(self.matfile2.keys())[0]
 
-        for kvar, val in self.temp_var_names.items():
-            if val["matfile name"] == MAT_val1:
-                print("  (upload_to_cache)", val["matfile name"], ":", kvar)
-                variable1 = kvar
-            if val["matfile name"] == MAT_val2 and MAT_val2 != "":
-                print("  (upload_to_cache)", val["matfile name"],":", kvar)
-                variable2 = kvar
+            for kvar, val in self.temp_var_names.items():
+                if val["matfile name"] == MAT_val1:
+                    variable1 = kvar
+                if val["matfile name"] == MAT_val2 and MAT_val2 != "":
+                    variable2 = kvar
 
-        for kv, n in self.matfile1[MAT_val1].items():
-            ts = kv[-15:]
-            date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
-            i = self.timesteps.index(date) # getting the index for that timestep
-            try:
-                netcdf2d["s", variable1, i] = n
-            except ValueError:
-                raise
-
-        if self.matfile2:
-            for kv, n in self.matfile2[MAT_val2].items():
+            m1start = time.time()
+            for kv, n in self.matfile1[MAT_val1].items():
                 ts = kv[-15:]
                 date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
-                i = self.timesteps.index(date)
+                i = self.timesteps.index(date) # getting the index for that timestep
                 try:
-                    netcdf2d["s", variable2, i] = n
+                    netcdf2d["s", variable1, i] = n
                 except ValueError:
                     raise
+            #m1end = time.time()
+            #print("            `-- m1 upload time:", m1end - m1start)
 
-        # erase for the next .mat file in the current month folder
-        self.matfile1 = {}
-        self.matfile2 = {}
+            if self.matfile2:
+                for kv, n in self.matfile2[MAT_val2].items():
+                    ts = kv[-15:]
+                    date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
+                    i = self.timesteps.index(date)
+                    try:
+                        netcdf2d["s", variable2, i] = n
+                    except ValueError:
+                        raise
+                #m2end = time.time()
+                #print("            `-- m2 upload time:", m2end - m1end)
 
+            # erase for the next .mat file in the current month folder
+            self.matfile1 = {}
+            self.matfile2 = {}
+
+        elif filetype == "spc":
+            pass
 
 
 
@@ -766,7 +784,7 @@ class NodeMap:
 
 def main(*args):
     """
-        from the command line
+        from the command line:
             $ netcdf-swan.py upload
     """
     # get rid of parentheses and script name

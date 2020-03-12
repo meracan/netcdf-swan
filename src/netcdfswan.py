@@ -150,7 +150,7 @@ class NodeMap:
         self.start_month = ""
         self.bathymetry = []
 
-        with open("../jsons/variable_names.json") as vnames:  # !!! remove 'test' when finished ----<---
+        with open("../jsons/variable_names.json") as vnames:
             self.temp_var_names = json.load(vnames)
         with open("../jsons/read_master.json") as rt:
             self.read_template = json.load(rt)
@@ -158,37 +158,39 @@ class NodeMap:
             self.master_input = json.load(im)
             self.mesh_folder = self.master_input["file paths"]["mesh folder"]
             self.data_folder = self.master_input["file paths"]["data folder"]
+            self.start_year = self.master_input["start year"]
+            self.start_month = self.master_input["start month"]
 
         # below could be optional if this class is used more generally/universally
         self.load_mesh()
         self.load_timesteps()  # user specified (?) if interruption, will need to read from s3 first.
         self.create_nca_input()  # timesteps can go in here now that all of them are 'loaded'
 
-    def load_timesteps(self):
-
-        # tentative solution:
-        if os.path.exists("startdate.txt"):
-            with open("startdate.txt", "r") as sd:
-                self.start_date = sd.readline()
-                self.start_year = self.start_date[:4]
-                self.start_month = self.start_date[5:7]
-                print(f"read startdate.txt: |{self.start_date}|, year: {self.start_year}, month: {self.start_month}")
-        else:
-            print("no file called \'startdate.txt\'")
-
-        # hard coded in beforehand
-        self.timesteps = [
-            num2date(
-                298032 + t,
-                units="hours since 1970-01-01 00:00:00.0",
-                calendar="gregorian"
-            )
-            for t in range(116064)
-        ]
-
-        self.num_timesteps = len(self.timesteps)
 
     def load_mesh(self):
+        # For the swan methods below, "-1" turns MATLAB's 1 indexing into Python's 0 indexing
+        def swan_noderead(self, nodefile):
+            with open(nodefile, 'r') as f:
+                V = np.loadtxt(f)
+            num_nodes = int(V[0, 0])
+            node_order = V[1:, 0].astype(int) - 1
+            lon, lat, = V[1:, 1], V[1:, 2]
+            boundary_marker = V[1:, 3].astype(int)
+            return num_nodes, node_order, lon, lat, boundary_marker
+
+        def swan_eleread(self, elefile):
+            with open(elefile, 'r') as f:
+                V = np.loadtxt(f, skiprows=1)
+            elements = V[:, 1:] - 1
+            elements = elements.astype(int)
+            return elements
+
+        def swan_botread(self, botfile):
+            with open(botfile, 'r') as f:
+                V = np.loadtxt(f)
+            z = V
+            return z
+
         mesh_node = ""
         mesh_ele = ""
         mesh_bot = ""
@@ -200,38 +202,95 @@ class NodeMap:
           elif re.match(re_bot, name):
             mesh_bot = name
 
-        self.num_nodes, self.node_order, self.lon, self.lat, self.boundary_markers = self.swan_noderead(self.mesh_folder+"/"+mesh_node)
-        self.elements = self.swan_eleread(self.mesh_folder+"/"+mesh_ele)
+        self.num_nodes, self.node_order, self.lon, self.lat, self.boundary_markers = swan_noderead(self.mesh_folder+"/"+mesh_node)
+        self.elements = swan_eleread(self.mesh_folder+"/"+mesh_ele)
         self.num_elements = len(self.elements)
-        self.bathymetry = self.swan_botread(self.mesh_folder+"/"+mesh_bot)
-
-    # For the swan methods below, "-1" turns MATLAB's 1 indexing into Python's 0 indexing
-    def swan_noderead(self, nodefile):
-        f = open(nodefile, 'r')
-        V = np.loadtxt(f)
-        f.close()
-        num_nodes = int(V[0,0])
-        node_order = V[1:, 0].astype(int) - 1
-        lon, lat, =  V[1:,1], V[1:,2]
-        boundary_marker = V[1:,3].astype(int)
-        return num_nodes, node_order, lon, lat, boundary_marker
-
-    def swan_eleread(self, elefile):
-        f = open(elefile,'r')
-        V = np.loadtxt(f,skiprows=1)
-        f.close()
-        elements = V[:,1:] - 1
-        elements = elements.astype(int)
-        return elements
-
-    def swan_botread(self, botfile):
-        f = open(botfile,'r')
-        V = np.loadtxt(f)
-        f.close()
-        z = V
-        return z
+        self.bathymetry = swan_botread(self.mesh_folder+"/"+mesh_bot)
 
 
+    def load_timesteps(self):
+        """ (tentative solution: eventually can check start dates from the s3 bucket itself.
+            self.start_year and self.start_month are initially from the input_master.json,
+            so all timesteps are always from beginning of earliest data folder,
+            even after startdate.txt is updated
+        """
+        datenum = date2num(
+            datetime(int(self.start_year), int(self.start_month), 1),
+            units="hours since 1970-01-01 00:00:00.0",
+            calendar="gregorian"
+        )
+        self.timesteps = [
+            num2date(
+                datenum + t,
+                units="hours since 1970-01-01 00:00:00.0",
+                calendar="gregorian"
+            )
+            for t in range(130000) # tentative
+        ]
+        if os.path.exists("startdate.txt"):
+            with open("startdate.txt", "r") as sd:
+                self.start_date = sd.readline()
+                self.start_year = self.start_date[:4]
+                self.start_month = self.start_date[5:7]
+                print(f"read startdate.txt: |{self.start_date}|, year: {self.start_year}, month: {self.start_month}")
+        else:
+            print("no file called \'startdate.txt\'")
+
+        self.num_timesteps = len(self.timesteps)
+
+
+    def create_nca_input(self):
+        """
+        Creates an 'nca' structure for the master input template (json) using the swan mesh data.
+        No variable data is loaded yet.
+        (most of this should already be in input_master.json for the user to specify)
+        """
+
+        master_input = self.master_input
+
+        metadata = dict(
+            title="File description",
+            institution="Specifies where the original data was produced",
+            source="The method of production of the original data",
+            history="Provides an audit trail for modifications to the original data",
+            references="Published or web-based references that describe the data or methods used to produce it",
+            comment="Miscellaneous information about the data or methods used to produce it"
+        )
+        master_input["metadata"] = metadata
+
+        dimensions = dict(
+            npe=3,
+            nnode=self.num_nodes,
+            ntime=self.num_timesteps,
+            nelem=self.num_elements
+        )
+        master_input["nca"]["dimensions"] = dimensions
+
+        variables = dict(
+            lat=dict(type="float64", dimensions=["nnode"], units="degrees_north", standard_name="latitude", long_name="latitude"),
+            lon=dict(type="float64", dimensions=["nnode"], units="degrees_east", standard_name="longitude", long_name="longitude"),
+            elem=dict(type="int32", dimensions=["nelem", "npe"], units="", standard_name="elements", long_name="elements"),
+            time=dict(type="float64", dimensions=["ntime"], units="hours since 1970-01-01 00:00:00.0", calendar="gregorian", standard_name="Datetime", long_name="Datetime"),
+            b=dict(type="float32", dimensions=["nnode"], units="m", standard_name="Bathymetry", long_name="Bathymetry, m (CGVD28)")
+        )
+        master_input["nca"]["variables"] = variables
+
+        # temporal data (check for master)
+        variables2 = {}
+        for k, v in self.temp_var_names.items():
+            var = dict(type="float32", units=v["units"], standard_name=v["standard name"], long_name=v["long name"])
+            variables2.update({k: var})
+
+        groups = dict(
+            s=dict(dimensions=["ntime", "nnode"], variables=variables2),
+        )
+        master_input["nca"]["groups"] = groups
+
+        self.master_input = master_input
+
+
+
+    # =====================================
     def load_mat(self, filepath, mfile):
         """
             Loads one mat file into self.matfile1 and self.matfile2 if there are both X and Y coordinates
@@ -257,8 +316,6 @@ class NodeMap:
         # mname: HS
         # mfile: HS.mat
         # filepath: ../BCSWANv5/2004/01/results/HS.mat
-
-
 
         matfile_dict = {}
         matfile_dictx = {}
@@ -320,7 +377,6 @@ class NodeMap:
         sname = re.match(re_spc, sfile).groups()[0]
 
         s = open(filepath, "r")
-        #print("---------------------------------------")
 
         lonlats = []
         afreqs = []
@@ -393,228 +449,10 @@ class NodeMap:
                 #print("no line!")
                 data = False
 
-        #print("---------------------------------------")
         s.close()
 
         self.start_date = timestep_keys[0]  # first timestep in the month
         self.spcfile = spcfile
-
-
-
-
-
-    # ===================== below not needed anymore?
-    def sort_coords(self):
-        """ should be after getting coordinates. check if tqdm is installed
-        """
-        lon_i_sort = np.argsort(self.lon[:])
-        lat_i_sort = np.argsort(self.lat[:])
-
-        if TQDM:
-            print("\nsorting longitudes...")
-            for i in tqdm(range(len(lon_i_sort))):
-                self.lon_sort.append( lon_i_sort[i] )
-
-            print("\nsorting latitudes...")
-            for i in tqdm(range(len(lat_i_sort))):
-                self.lat_sort.append( lat_i_sort[i] )
-        else:
-            print("\nsorting latitudes and longitudes...")
-            for i in range(len(lon_i_sort)):
-                self.lon_sort.append( lon_i_sort[i] )
-            for i in range(len(lat_i_sort)):
-                self.lat_sort.append( lat_i_sort[i] )
-
-
-    # ===========================
-
-
-    def node_submap_area(self, min_lat, max_lat, min_long, max_long, start_time, end_time):
-        """ should have read a node map already
-            * * probably as lambda, after deploying to bucket
-        """
-        self.min_lat = min_lat
-        self.max_lat = max_lat
-        self.min_long = min_long
-        self.max_long = max_long
-        self.start_time = start_time
-        self.end_time = end_time
-
-
-    def tri_plot(self, x, y, z=None, node_area=None):
-        """
-            optional method, just to see
-            should be able to change self.depth to other z attributes.
-            if node area has been specified, use those coordinates instead
-        """
-        if z is None:
-          z = self.bathymetry
-
-        tg = Triangulation(x, y, self.elements) # will need to change elements if only a specified region
-        plt.figure() # figsize=(10,10))
-        plt.gca().set_aspect('equal')
-        plt.tripcolor(tg, z, edgecolors='k', vmin=min(z), vmax=max(z))
-        plt.colorbar()
-        plt.title('Contour plot of user-specified triangulation')
-        plt.xlabel('Longitude (degrees)')
-        plt.ylabel('Latitude (degrees)')
-        plt.show()
-
-    def update_plot(self):
-        """ dynamic, need some sort of signal or command to trigger this
-        """
-        print("<update not implemented yet!>")
-
-    def get_node_area(self, box=[0,0,0,0]):
-        """ Returns a list of nodes within a boxed region: [west, south, east, north]
-        """
-        lon_box = [l for i,l in enumerate(self.lon_sort) if (box[0] <= self.lon[i] and self.lon[i] <= box[2])]
-        lat_box = [l for i,l in enumerate(self.lat_sort) if (box[1] <= self.lat[i] and self.lat[i] <= box[3])]
-        box = list(set(lon_box) & set(lat_box))
-        return box
-
-    def get_node_area_delta(self, longitude, latitude, delta):
-        """ Returns a list of nodes within a region. The point is at a longitude
-            and latitude, with each side at +/- delta degrees from that point
-        """
-        lon_box = [l for i,l in enumerate(self.lon_sort) if (longitude-delta <= self.lon[i] and self.lon[i] <= longitude+delta)]
-        lat_box = [l for i,l in enumerate(self.lat_sort) if (latitude-delta <= self.lat[i] and self.lat[i] <= latitude+delta)]
-        box = list(set(lon_box) & set(lat_box))
-        return box
-
-
-
-    def upload_files(self):
-        """
-        - Pseudocode -
-
-        determine starting month folder
-        for each year:
-            for each month:
-                for each .mat (and .spc) file:
-                    load .mat file and first timestep into the Node Map (e.g. HS.mat, line_n.spc)
-                    use s3-netcdf package to partition the data and store in the cache
-                write latest timestep to 'startdate.txt'
-
-
-        both mat and spc files will be in the folder, but the mat files are 'prioritized'...
-            if spc files are read first, will have timesteps but the number of nodes will be completely different and
-            not part of the template
-
-        """
-        #start_ = time.time()
-
-        # 'startdate.txt' stores the time step from the month where the upload stopped.
-        # a new NodeMap sets self.start_year and self.start_month initially. if reloading, upload mesh data first
-        sd = open("startdate.txt", "w+")
-        data_folder = self.data_folder
-        search_year = self.start_year == ""
-        search_month = self.start_month == ""
-        reloading = search_year != ""
-        if reloading:
-            self.upload_to_cache("grid")
-
-        # print("BCSWANv5")
-        for year in sorted(os.listdir(data_folder)):
-            if year != 'Mesh' and not year.startswith('.') and os.path.isdir(data_folder + "/" + year):  # avoid '.DS_Store' file
-                # print("|--", year)
-                if not search_year:  # skip through until year is found
-                    if year != self.start_year: continue
-                    else: search_year = True
-                for month in sorted(os.listdir(data_folder + "/" + year)):
-                    if not month.startswith('.') and os.path.isdir(data_folder + "/" + year + "/" + month):
-                        # print("    |--", month)
-                        if not search_month:  # skip through until month is found
-                            if month != self.start_month: continue
-                            else: search_month = True
-                        results = os.path.join(data_folder, year, month, "results")
-                        files = [name for name in os.listdir(results)]  # e.g. ['HS.mat'] or ['HS.mat', 'WIND.mat', ... ]
-                        for filename in files:
-
-                            if re.match(re_mat, filename) or re.match(re_mat_test, filename):
-                                # start = time.time()
-                                # print("        |--", filename)
-                                mfilepath = os.path.join(data_folder, year, month, "results", filename)
-                                self.load_mat(mfilepath, filename)  # updates self.start_date and current mat files
-
-                                # endloadmat = time.time()
-                                # print("            |-- load_mat time:", endloadmat - start)
-                                self.upload_to_cache("mat")  # write matfile data to NetCDF2D object
-
-                                # endupload = time.time()
-                                # print("            `-- upload_to_cache time:", endupload - endloadmat)
-
-                            elif re.match(re_spc, filename):  # .spc
-                                # start = time.time()
-                                # print("        |--", filename)
-                                sfilepath = os.path.join(data_folder, year, month, "results", filename)
-                                self.load_spc(sfilepath, filename) # new spc file updates self.start_date
-
-                                # endloadspc = time.time()
-                                # print("            |-- load_spc time:", endloadspc - start)
-                                self.upload_to_cache("spc")
-
-                                # endupload = time.time()
-                                # print("            `-- upload_to_cache time:", endupload - endloadspc)
-
-                        # store start date
-                        sd.seek(0)
-                        sd.write(str(self.start_date))
-                        sd.truncate()
-
-        sd.close()
-        # _end = time.time()
-        # print("Total time:", _end-start_)
-
-
-
-    def create_nca_input(self):
-        """
-        Creates an 'nca' structure for the master input template (json) using the swan mesh data.
-        No variable data is loaded yet.
-        """
-
-        master_input = self.master_input
-
-        metadata = dict(
-            title="File description",
-            institution="Specifies where the original data was produced",
-            source="The method of production of the original data",
-            history="Provides an audit trail for modifications to the original data",
-            references="Published or web-based references that describe the data or methods used to produce it",
-            comment="Miscellaneous information about the data or methods used to produce it"
-        )
-        master_input["metadata"] = metadata
-
-        dimensions = dict(
-            npe=3,
-            nnode=self.num_nodes,
-            ntime=self.num_timesteps,
-            nelem=self.num_elements
-        )
-        master_input["nca"]["dimensions"] = dimensions
-
-        variables = dict(
-            lat=dict(type="float64", dimensions=["nnode"], units="degrees_north", standard_name="latitude", long_name="latitude"),
-            lon=dict(type="float64", dimensions=["nnode"], units="degrees_east", standard_name="longitude", long_name="longitude"),
-            elem=dict(type="int32", dimensions=["nelem", "npe"], units="", standard_name="elements", long_name="elements"),
-            time=dict(type="float64", dimensions=["ntime"], units="hours since 1970-01-01 00:00:00.0", calendar="gregorian", standard_name="Datetime", long_name="Datetime"),
-            b=dict(type="float32", dimensions=["nnode"], units="m", standard_name="Bathymetry", long_name="Bathymetry, m (CGVD28)")
-        )
-        master_input["nca"]["variables"] = variables
-
-        # temporal data (check for master)
-        variables2 = {}
-        for k, v in self.temp_var_names.items():
-            var = dict(type="float32", units=v["units"], standard_name=v["standard name"], long_name=v["long name"])
-            variables2.update({k: var})
-
-        groups = dict(
-            s=dict(dimensions=["ntime", "nnode"], variables=variables2),
-        )
-        master_input["nca"]["groups"] = groups
-
-        self.master_input = master_input
 
 
     def upload_to_cache(self, filetype):
@@ -690,9 +528,168 @@ class NodeMap:
             self.matfile2 = {}
 
         elif filetype == "spc":
+            # TODO
             pass
 
 
+    def upload_files(self):
+        """
+        - Pseudocode -
+
+        determine starting month folder
+        for each year:
+            for each month:
+                for each .mat (and .spc) file:
+                    load .mat file and first timestep into the Node Map (e.g. HS.mat, line_n.spc)
+                    use s3-netcdf package to partition the data and store in the cache
+                write latest timestep to 'startdate.txt'
+
+
+        both mat and spc files will be in the folder, but the mat files are 'prioritized'...
+            if spc files are read first, will have timesteps but the number of nodes will be completely different and
+            not part of the template
+
+        """
+        #start_ = time.time()
+
+        # 'startdate.txt' stores the time step from the month where the upload stopped.
+        # a new NodeMap sets self.start_year and self.start_month initially. if reloading, upload mesh data first
+        sd = open("startdate.txt", "w+")  # should open each month? each year? or does it matter?
+        data_folder = self.data_folder
+        search_year = self.start_year == ""
+        search_month = self.start_month == ""
+        reloading = search_year != ""
+        if reloading:
+            self.upload_to_cache("grid")
+
+        # print("BCSWANv5")
+        for year in sorted(os.listdir(data_folder)):
+            if year != 'Mesh' and not year.startswith('.') and os.path.isdir(data_folder + "/" + year):  # avoid '.DS_Store' file
+                # print("|--", year)
+                if not search_year:  # skip through until year is found
+                    if year != self.start_year: continue
+                    else: search_year = True
+                for month in sorted(os.listdir(data_folder + "/" + year)):
+                    if not month.startswith('.') and os.path.isdir(data_folder + "/" + year + "/" + month):
+                        # print("    |--", month)
+                        if not search_month:  # skip through until month is found
+                            if month != self.start_month: continue
+                            else: search_month = True
+                        results = os.path.join(data_folder, year, month, "results")
+                        files = [name for name in os.listdir(results)]  # e.g. ['HS.mat'] or ['HS.mat', 'WIND.mat', ... ]
+                        for filename in files:
+
+                            if re.match(re_mat, filename) or re.match(re_mat_test, filename):
+                                # start = time.time()
+                                # print("        |--", filename)
+                                mfilepath = os.path.join(data_folder, year, month, "results", filename)
+                                self.load_mat(mfilepath, filename)  # updates self.start_date and current mat files
+
+                                # endloadmat = time.time()
+                                # print("            |-- load_mat time:", endloadmat - start)
+                                self.upload_to_cache("mat")  # write matfile data to NetCDF2D object
+
+                                # endupload = time.time()
+                                # print("            `-- upload_to_cache time:", endupload - endloadmat)
+
+                            elif re.match(re_spc, filename):  # .spc
+                                # start = time.time()
+                                # print("        |--", filename)
+                                sfilepath = os.path.join(data_folder, year, month, "results", filename)
+                                self.load_spc(sfilepath, filename) # new spc file updates self.start_date
+
+                                # endloadspc = time.time()
+                                # print("            |-- load_spc time:", endloadspc - start)
+                                self.upload_to_cache("spc")
+
+                                # endupload = time.time()
+                                # print("            `-- upload_to_cache time:", endupload - endloadspc)
+
+                        # store start date
+                        sd.seek(0)
+                        sd.write(str(self.start_date))
+                        sd.truncate()
+
+        sd.close()
+        # _end = time.time()
+        # print("Total time:", _end-start_)
+
+
+    # ===================== below not needed anymore?
+    def sort_coords(self):
+        """ should be after getting coordinates. check if tqdm is installed
+        """
+        lon_i_sort = np.argsort(self.lon[:])
+        lat_i_sort = np.argsort(self.lat[:])
+
+        if TQDM:
+            print("\nsorting longitudes...")
+            for i in tqdm(range(len(lon_i_sort))):
+                self.lon_sort.append(lon_i_sort[i])
+
+            print("\nsorting latitudes...")
+            for i in tqdm(range(len(lat_i_sort))):
+                self.lat_sort.append(lat_i_sort[i])
+        else:
+            print("\nsorting latitudes and longitudes...")
+            for i in range(len(lon_i_sort)):
+                self.lon_sort.append(lon_i_sort[i])
+            for i in range(len(lat_i_sort)):
+                self.lat_sort.append(lat_i_sort[i])
+
+    def node_submap_area(self, min_lat, max_lat, min_long, max_long, start_time, end_time):
+        """ should have read a node map already
+            * * probably as lambda, after deploying to bucket
+        """
+        self.min_lat = min_lat
+        self.max_lat = max_lat
+        self.min_long = min_long
+        self.max_long = max_long
+        self.start_time = start_time
+        self.end_time = end_time
+
+    def tri_plot(self, x, y, z=None, node_area=None):
+        """
+            optional method, just to see
+            should be able to change self.depth to other z attributes.
+            if node area has been specified, use those coordinates instead
+        """
+        if z is None:
+            z = self.bathymetry
+
+        tg = Triangulation(x, y, self.elements)  # will need to change elements if only a specified region
+        plt.figure()  # figsize=(10,10))
+        plt.gca().set_aspect('equal')
+        plt.tripcolor(tg, z, edgecolors='k', vmin=min(z), vmax=max(z))
+        plt.colorbar()
+        plt.title('Contour plot of user-specified triangulation')
+        plt.xlabel('Longitude (degrees)')
+        plt.ylabel('Latitude (degrees)')
+        plt.show()
+
+    def update_plot(self):
+        """ dynamic, need some sort of signal or command to trigger this
+        """
+        print("<update not implemented yet!>")
+
+    def get_node_area(self, box=[0, 0, 0, 0]):
+        """ Returns a list of nodes within a boxed region: [west, south, east, north]
+        """
+        lon_box = [l for i, l in enumerate(self.lon_sort) if (box[0] <= self.lon[i] and self.lon[i] <= box[2])]
+        lat_box = [l for i, l in enumerate(self.lat_sort) if (box[1] <= self.lat[i] and self.lat[i] <= box[3])]
+        box = list(set(lon_box) & set(lat_box))
+        return box
+
+    def get_node_area_delta(self, longitude, latitude, delta):
+        """ Returns a list of nodes within a region. The point is at a longitude
+            and latitude, with each side at +/- delta degrees from that point
+        """
+        lon_box = [l for i, l in enumerate(self.lon_sort) if
+                   (longitude - delta <= self.lon[i] and self.lon[i] <= longitude + delta)]
+        lat_box = [l for i, l in enumerate(self.lat_sort) if
+                   (latitude - delta <= self.lat[i] and self.lat[i] <= latitude + delta)]
+        box = list(set(lon_box) & set(lat_box))
+        return box
 
     def download(self):
         """
@@ -780,6 +777,8 @@ class NodeMap:
                     print_ncattr(var)
 
         return nc_attrs, nc_dims, nc_vars
+    # =====================================
+
 
 
 def main(*args):

@@ -13,6 +13,8 @@
     "test data folder": "./data",
     "test mesh folder": "./data/Mesh"
   },
+  "start year": 2004,
+  "start month": 1,
   "nca": {
     "dimensions" : {"npe":3,"nelem":0,"nnode":0,"ntime":0},
     "groups":{

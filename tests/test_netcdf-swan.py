@@ -177,7 +177,7 @@ def test_HS_large():
 
 def test_netcdf2d():
     nm = NodeMap()
-    nm.upload_mats()
+    nm.upload_files()
 
 
 

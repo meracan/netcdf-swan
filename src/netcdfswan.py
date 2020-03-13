@@ -169,7 +169,7 @@ class NodeMap:
 
     def load_mesh(self):
         # For the swan methods below, "-1" turns MATLAB's 1 indexing into Python's 0 indexing
-        def swan_noderead(self, nodefile):
+        def swan_noderead(nodefile):
             with open(nodefile, 'r') as f:
                 V = np.loadtxt(f)
             num_nodes = int(V[0, 0])
@@ -178,14 +178,14 @@ class NodeMap:
             boundary_marker = V[1:, 3].astype(int)
             return num_nodes, node_order, lon, lat, boundary_marker
 
-        def swan_eleread(self, elefile):
+        def swan_eleread(elefile):
             with open(elefile, 'r') as f:
                 V = np.loadtxt(f, skiprows=1)
             elements = V[:, 1:] - 1
             elements = elements.astype(int)
             return elements
 
-        def swan_botread(self, botfile):
+        def swan_botread(botfile):
             with open(botfile, 'r') as f:
                 V = np.loadtxt(f)
             z = V
@@ -227,14 +227,15 @@ class NodeMap:
             )
             for t in range(130000) # tentative
         ]
-        if os.path.exists("startdate.txt"):
-            with open("startdate.txt", "r") as sd:
+        startdatepath = "../src/startdate.txt"
+        if os.path.exists(startdatepath):
+            with open("../src/startdate.txt", "r") as sd:
                 self.start_date = sd.readline()
                 self.start_year = self.start_date[:4]
                 self.start_month = self.start_date[5:7]
                 print(f"read startdate.txt: |{self.start_date}|, year: {self.start_year}, month: {self.start_month}")
         else:
-            print("no file called \'startdate.txt\'")
+            print(f"no file called \'{startdatepath}\'")
 
         self.num_timesteps = len(self.timesteps)
 
@@ -370,6 +371,8 @@ class NodeMap:
                         - rows are each frequency (e.g. 34 down)
 
             performance issue: dictionaries vs numpy arrays? mix? or use one over the other?
+
+            aggregate all spc files for one month
         """
         timestep_keys = []
 
@@ -554,7 +557,7 @@ class NodeMap:
 
         # 'startdate.txt' stores the time step from the month where the upload stopped.
         # a new NodeMap sets self.start_year and self.start_month initially. if reloading, upload mesh data first
-        sd = open("startdate.txt", "w+")  # should open each month? each year? or does it matter?
+        sd = open("../src/startdate.txt", "w+")  # should open each month? each year? or does it matter?
         data_folder = self.data_folder
         search_year = self.start_year == ""
         search_month = self.start_month == ""
@@ -567,13 +570,17 @@ class NodeMap:
             if year != 'Mesh' and not year.startswith('.') and os.path.isdir(data_folder + "/" + year):  # avoid '.DS_Store' file
                 # print("|--", year)
                 if not search_year:  # skip through until year is found
-                    if year != self.start_year: continue
+                    if year != str(self.start_year):
+                        #print(f"ERROR year: |{year}| {type(year)}, |{self.start_year}|, {type(self.start_year)}")
+                        continue
                     else: search_year = True
                 for month in sorted(os.listdir(data_folder + "/" + year)):
                     if not month.startswith('.') and os.path.isdir(data_folder + "/" + year + "/" + month):
                         # print("    |--", month)
                         if not search_month:  # skip through until month is found
-                            if month != self.start_month: continue
+                            if month != str(self.start_month):
+                                #print("ERROR month")
+                                continue
                             else: search_month = True
                         results = os.path.join(data_folder, year, month, "results")
                         files = [name for name in os.listdir(results)]  # e.g. ['HS.mat'] or ['HS.mat', 'WIND.mat', ... ]

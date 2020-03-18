@@ -83,7 +83,7 @@ nodes and their coordinate information (the 'mesh' or 'grid'):
 
 The directory path for the SWAN data, as well as the start year and start month, 
 should be written in 'input_master.json' ahead of time so the script knows where to look when it runs. 
-Ideally, the script should be placed beside the data folder. Other path names are also stored in this json file, 
+Ideally, the script (src) should be placed beside the data folder. Other path names are also stored in this json file, 
 with the rest of the input as indicated in the s3-netcdf documentation.
 
 ### NodeMap

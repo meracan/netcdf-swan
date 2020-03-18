@@ -132,17 +132,28 @@ class NodeMap:
             3. creates the nca template using the mesh and time information
         """
         self.num_nodes = 0
+        self.num_snodes = 0
         self.num_elements = 0
         self.num_timesteps = 0
         self.node_order = None
         self.lon, self.lat = None, None
+        self.spc_lon, self.spc_lat = None, None
         self.lon_sort, self.lat_sort = [], []
         self.boundary_markers = None
         self.matfile1 = {}
         self.matfile2 = {}
         self.spcfile = {}
-        self.afreqs = []
-        self.ndir = []
+
+        # hard coded for now:
+        self.afreqs = [
+            0.0345,0.0377,0.0413,0.0452,0.0494,0.0540,0.0591,0.0647,0.0707,0.0774,0.0846,
+            0.0926,0.1013,0.1108,0.1212,0.1326,0.1450,0.1586,0.1735,0.1898,0.2076,0.2271,
+            0.2484,0.2717,0.2973,0.3252,0.3557,0.3891,0.4256,0.4656,0.5093,0.5571,0.6094,0.6666
+        ]
+        self.dirs = [265.0-10*i for i in range(36)]
+        self.num_afreqs = len(self.afreqs)
+        self.num_dirs = len(self.dirs)
+
         self.elements = None
         self.timesteps = []
         self.start_date = ""
@@ -163,6 +174,7 @@ class NodeMap:
 
         # below could be optional if this class is used more generally/universally
         self.load_mesh()
+        self.load_spc_nodes()
         self.load_timesteps()  # user specified (?) if interruption, will need to read from s3 first.
         self.create_nca_input()  # timesteps can go in here now that all of them are 'loaded'
 
@@ -208,6 +220,58 @@ class NodeMap:
         self.bathymetry = swan_botread(self.mesh_folder+"/"+mesh_bot)
 
 
+    def load_spc_nodes(self):
+        """
+            scan through ALL spc files first, just to get snodes
+        """
+        spc_lons = []
+        spc_lats = []
+        snodes = []
+
+        def open_spc(filename):
+            s = open(filename, "r")
+            searching = True
+            while searching:
+                line = s.readline()
+                token = line.split()[0]
+                if token == "LONLAT":
+                    searching = False
+                    num_lonlat = int(s.readline().split()[0])
+                    for ll in range(num_lonlat):
+                        lonlat = s.readline().split()
+                        spc_lons.append(lonlat[0])
+                        spc_lats.append(lonlat[1])
+                        snodes.append((lonlat[0], lonlat[1]))
+            s.close()
+
+        year = sorted([
+            y for y in os.listdir(self.data_folder)
+            if y != "Mesh"
+               and not y.startswith('.') \
+               and os.path.isdir(self.data_folder + "/" + y)
+        ])[0]
+        month = sorted([
+            m for m in os.listdir(self.data_folder + "/" + year)
+            if not m.startswith('.') \
+               and os.path.isdir(self.data_folder + "/" + year + "/")
+        ])[0]
+        #results = os.path.join(self.data_folder, year, month, "results") # <---- change back to this for actual run
+
+        results = os.path.join(self.data_folder, "2004", "01", "results")
+        files = sorted([name for name in os.listdir(results)])
+        for filename in files:
+            if re.match(re_spc, filename):
+                sfilepath = os.path.join(results, filename)
+                open_spc(sfilepath)
+
+        self.spc_lon = spc_lons
+        self.spc_lat = spc_lats
+        self.snodes = snodes
+        self.num_snodes = len(snodes)
+        #for lon, lat in zip(spc_lons, spc_lats):
+        #    print(lon, "\t", lat)
+
+
     def load_timesteps(self):
         """ (tentative solution: eventually can check start dates from the s3 bucket itself.
             self.start_year and self.start_month are initially from the input_master.json,
@@ -244,7 +308,8 @@ class NodeMap:
         """
         Creates an 'nca' structure for the master input template (json) using the swan mesh data.
         No variable data is loaded yet.
-        (most of this should already be in input_master.json for the user to specify)
+
+        Later version: most of this should already be in input_master.json for the user to specify
         """
 
         master_input = self.master_input
@@ -263,7 +328,12 @@ class NodeMap:
             npe=3,
             nnode=self.num_nodes,
             ntime=self.num_timesteps,
-            nelem=self.num_elements
+            nelem=self.num_elements,
+
+            nsnode=self.num_snodes,
+            nafreq=self.num_afreqs,
+            ndir=self.num_dirs
+
         )
         master_input["nca"]["dimensions"] = dimensions
 
@@ -272,18 +342,45 @@ class NodeMap:
             lon=dict(type="float64", dimensions=["nnode"], units="degrees_east", standard_name="longitude", long_name="longitude"),
             elem=dict(type="int32", dimensions=["nelem", "npe"], units="", standard_name="elements", long_name="elements"),
             time=dict(type="float64", dimensions=["ntime"], units="hours since 1970-01-01 00:00:00.0", calendar="gregorian", standard_name="Datetime", long_name="Datetime"),
-            b=dict(type="float32", dimensions=["nnode"], units="m", standard_name="Bathymetry", long_name="Bathymetry, m (CGVD28)")
+            b=dict(type="float32", dimensions=["nnode"], units="m", standard_name="Bathymetry", long_name="Bathymetry, m (CGVD28)"),
+
+            afreq=dict(
+                type="float64",
+                dimensions=["nafreq"],
+                units="Hz",
+                standard_name="absolute frequency",
+                long_name="absolute frequencies in Hz"
+            ),
+            dir=dict(
+                type="float64",
+                dimensions=["ndir"],
+                units="degrees",
+                standard_name="spectral nautical directions",
+                long_name="spectral nautical directions in degr"
+            )
         )
         master_input["nca"]["variables"] = variables
 
-        # temporal data (check for master)
-        variables2 = {}
+        # temporal data
+        variablesMat = {}
         for k, v in self.temp_var_names.items():
             var = dict(type="float32", units=v["units"], standard_name=v["standard name"], long_name=v["long name"])
-            variables2.update({k: var})
+            variablesMat.update({k: var})
+
+        # spectral data (just the one variable, not sure what to call it)
+        variablesSpec = {
+            "spectra": dict(
+                type="float32",
+                units="m2/Hz/degr",
+                standard_name="VaDens",
+                long_name="variance densities in m2/Hz/degr",
+                exception_value=-0.9900E+02
+            )
+        }
 
         groups = dict(
-            s=dict(dimensions=["ntime", "nnode"], variables=variables2),
+            s=dict(dimensions=["ntime", "nnode"], variables=variablesMat),
+            ss=dict(dimensions=["ntime", "nsnode", "nafreq", "ndir"], variables=variablesSpec)
         )
         master_input["nca"]["groups"] = groups
 
@@ -382,9 +479,9 @@ class NodeMap:
         s = open(filepath, "r")
 
         lonlats = []
-        afreqs = []
-        dirs = []
-        num_lonlat, num_afreq, num_dir = 0., 0., 0.
+        #afreqs = []
+        #dirs = []
+        num_lonlat, num_afreq, num_dir = 0., len(self.afreqs), len(self.dirs)
 
         spcfile = {}
 
@@ -399,26 +496,27 @@ class NodeMap:
                     lonlat = s.readline().split()
                     lonlats.append((lonlat[0], lonlat[1]))
                 #print("LONLAT ->", num_lonlat)
-
-            elif token == "AFREQ":
-                num_afreq = int(s.readline().split()[0])
-                for af in range(num_afreq):
-                    afreq = s.readline().split()[0]
-                    afreqs.append(afreq)
-                #print("AFREQ ->", num_lonlat)
-
-            elif token == "NDIR":
-                num_dir = int(s.readline().split()[0])
-                for d in range(num_dir):
-                    dir = s.readline().split()[0]
-                    dirs.append(dir)
-                #print("NDIR ->", num_dir)
+                """
+                elif token == "AFREQ":
+                    num_afreq = int(s.readline().split()[0])
+                    for af in range(num_afreq):
+                        afreq = s.readline().split()[0]
+                        afreqs.append(afreq)
+                    #print("AFREQ ->", num_lonlat)
+    
+                elif token == "NDIR":
+                    num_dir = int(s.readline().split()[0])
+                    for d in range(num_dir):
+                        dir = s.readline().split()[0]
+                        dirs.append(dir)
+                    #print("NDIR ->", num_dir)
+                """
 
             elif re.match(re_spcdate, token):
                 metadata = False
 
-        self.afreqs = afreqs
-        self.ndir = dirs
+        #self.afreqs = afreqs
+        #self.ndir = dirs
         # some more info between above and tables below
 
         data = True
@@ -438,10 +536,11 @@ class NodeMap:
                     factor = s.readline().split()[0].strip()
                     factor = float(factor)
 
-                    fd = np.array(
-                        [np.array([int(d) for d in s.readline().split()]) for afreq in range(num_afreq)]
+                    fd_block = np.array(
+                        [np.array([float(int(d)*factor) for d in s.readline().split()]) for afreq in range(num_afreq)]
                     )
-                    lldict[lonlat] = (factor, fd)
+                    #lldict[lonlat] = (factor, fd)
+                    lldict[lonlat] = fd_block
                 spcfile[timestep] = lldict
             else:
                 print("something went wrong!")
@@ -460,6 +559,7 @@ class NodeMap:
 
     def upload_to_cache(self, filetype):
         """
+            Writing to NetCDF2D:
             A NetCDF2D object is created with the finished template and the contents from the node map
                 are written to the NetCDF2D object one timestep at a time.
             if 'grid' is true, that means we need to re-load all static data as well as the time steps.
@@ -477,6 +577,10 @@ class NodeMap:
             netcdf2d.nca.variables["lon"][:] = self.lon
             netcdf2d.nca.variables["elem"][:] = self.elements
             netcdf2d.nca.variables["b"][:] = self.bathymetry
+
+            # spc variables:
+            netcdf2d.nca.variables["afreq"][:] = self.afreqs
+            netcdf2d.nca.variables["dir"][:] = self.dirs
 
             for t, ts in enumerate(self.timesteps):
                 netcdf2d.nca.variables["time"][t] = date2num(
@@ -531,8 +635,21 @@ class NodeMap:
             self.matfile2 = {}
 
         elif filetype == "spc":
-            # TODO
-            pass
+            # time variables already written in when 'upload_to_cache("grid")' was called.
+            # only thing needed is to
+            s_start = time.time()
+            for date, snodes in self.spcfile.items():
+                i = self.timesteps.index(date)
+
+                for snode, afreqs in snodes.items(): # snode will have an index
+
+                    sn = self.snodes.index((snode[0], snode[1]))
+                    #print(sn)
+                    netcdf2d["ss", "spectra", i, sn] = afreqs
+            s_end = time.time()
+            print("snode time:", s_end-s_start)
+            self.spcfile = {}
+
 
 
     def upload_files(self):
@@ -583,7 +700,7 @@ class NodeMap:
                                 continue
                             else: search_month = True
                         results = os.path.join(data_folder, year, month, "results")
-                        files = [name for name in os.listdir(results)]  # e.g. ['HS.mat'] or ['HS.mat', 'WIND.mat', ... ]
+                        files = sorted([name for name in os.listdir(results)])  # e.g. ['HS.mat'] or ['HS.mat', 'WIND.mat', ... ]
                         for filename in files:
 
                             if re.match(re_mat, filename) or re.match(re_mat_test, filename):
@@ -822,7 +939,7 @@ def main(*args):
         nm.download()
 
 
-    print("*** finished")
+    print("*** finished main()")
 
 
 if __name__ == '__main__':

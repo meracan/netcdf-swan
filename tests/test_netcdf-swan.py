@@ -149,7 +149,7 @@ def netcdf2d_temporal_WIND():
 
 
 # moment of truth...
-def test_HS_large():
+def ttest_HS_large():
     # half a gigabyte
 
     nm = NodeMap()
@@ -182,7 +182,7 @@ def test_netcdf2d():
 
 
 @pytest.mark.parametrize("test_year, test_month", test_year_month)
-def test_netcdf2d_old(test_year, test_month):
+def ttest_netcdf2d_old(test_year, test_month):
     nm = NodeMap()
     nm.load_mats(test_year, test_month)
     nm.upload()
@@ -252,7 +252,7 @@ test_nc_against_mat = [
 
 
 @pytest.mark.parametrize("test_nc, test_mat", test_nc_against_mat)
-def test_compare_shapes(test_nc, test_mat):
+def ttest_compare_shapes(test_nc, test_mat):
     """
             6 timesteps, 177945 nodes
 

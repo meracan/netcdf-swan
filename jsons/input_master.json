@@ -16,7 +16,7 @@
   "start year": 2004,
   "start month": 1,
   "nca": {
-    "dimensions" : {"npe":3,"nelem":0,"nnode":0,"ntime":0},
+    "dimensions" : {"npe":3,"nelem":0,"nnode":0,"ntime":0,"nsnode":0,"nafreq":0,"ndir":0},
     "groups":{
       "elem":{"dimensions":["nelem","npe"],"variables":{
           "elem":{"type":"i4", "units":"" ,"standard_name":"Elements" ,"long_name":"Connectivity table (mesh elements)"}

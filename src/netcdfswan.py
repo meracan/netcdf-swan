@@ -135,7 +135,6 @@ class NodeMap:
         self.num_snodes = 0
         self.num_elements = 0
         self.num_timesteps = 0
-        self.node_order = None
         self.lon, self.lat = None, None
         self.spc_lon, self.spc_lat = None, None
         self.lon_sort, self.lat_sort = [], []
@@ -151,8 +150,8 @@ class NodeMap:
             0.2484,0.2717,0.2973,0.3252,0.3557,0.3891,0.4256,0.4656,0.5093,0.5571,0.6094,0.6666
         ]
         self.dirs = [265.0-10*i for i in range(36)]
-        self.num_afreqs = len(self.afreqs)
-        self.num_dirs = len(self.dirs)
+        self.num_afreqs = len(self.afreqs)  # 34
+        self.num_dirs = len(self.dirs)  # 36
 
         self.elements = None
         self.timesteps = []
@@ -169,14 +168,17 @@ class NodeMap:
             self.master_input = json.load(im)
             self.mesh_folder = self.master_input["file paths"]["mesh folder"]
             self.data_folder = self.master_input["file paths"]["data folder"]
+            self.file_checklist = sorted(self.master_input["file paths"]["file checklist"]) # needed?
+
             self.start_year = self.master_input["start year"]
             self.start_month = self.master_input["start month"]
 
         # below could be optional if this class is used more generally/universally
         self.load_mesh()
         self.load_spc_nodes()
-        self.load_timesteps()  # user specified (?) if interruption, will need to read from s3 first.
+        self.load_timesteps()  # TODO: if interruption, read from s3 first.
         self.create_nca_input()  # timesteps can go in here now that all of them are 'loaded'
+        # self.upload_to_cache("grid")
 
 
     def load_mesh(self):
@@ -214,7 +216,7 @@ class NodeMap:
           elif re.match(re_bot, name):
             mesh_bot = name
 
-        self.num_nodes, self.node_order, self.lon, self.lat, self.boundary_markers = swan_noderead(self.mesh_folder+"/"+mesh_node)
+        self.num_nodes, _, self.lon, self.lat, self.boundary_markers = swan_noderead(self.mesh_folder+"/"+mesh_node)
         self.elements = swan_eleread(self.mesh_folder+"/"+mesh_ele)
         self.num_elements = len(self.elements)
         self.bathymetry = swan_botread(self.mesh_folder+"/"+mesh_bot)
@@ -222,7 +224,7 @@ class NodeMap:
 
     def load_spc_nodes(self):
         """
-            scan through ALL spc files first, just to get snodes
+            scan through ALL spc files first, just to get spectra nodes
         """
         spc_lons = []
         spc_lats = []
@@ -244,6 +246,7 @@ class NodeMap:
                         snodes.append((lonlat[0], lonlat[1]))
             s.close()
 
+        # get the first year and month in the entire dataset
         year = sorted([
             y for y in os.listdir(self.data_folder)
             if y != "Mesh"
@@ -255,9 +258,10 @@ class NodeMap:
             if not m.startswith('.') \
                and os.path.isdir(self.data_folder + "/" + year + "/")
         ])[0]
-        #results = os.path.join(self.data_folder, year, month, "results") # <---- change back to this for actual run
 
+        # results = os.path.join(self.data_folder, year, month, "results") # <---- change back to this for actual run
         results = os.path.join(self.data_folder, "2004", "01", "results")
+
         files = sorted([name for name in os.listdir(results)])
         for filename in files:
             if re.match(re_spc, filename):
@@ -268,15 +272,14 @@ class NodeMap:
         self.spc_lat = spc_lats
         self.snodes = snodes
         self.num_snodes = len(snodes)
-        #for lon, lat in zip(spc_lons, spc_lats):
-        #    print(lon, "\t", lat)
 
 
     def load_timesteps(self):
-        """ (tentative solution: eventually can check start dates from the s3 bucket itself.
+        """
+            (tentative solution: eventually can check start dates from the s3 bucket itself.
             self.start_year and self.start_month are initially from the input_master.json,
-            so all timesteps are always from beginning of earliest data folder,
-            even after startdate.txt is updated
+            timesteps are always from beginning of earliest data folder even after startdate.txt is updated.
+            After load_timesteps, self.start_year and self.start_month may be updated
         """
         datenum = date2num(
             datetime(int(self.start_year), int(self.start_month), 1),
@@ -289,7 +292,7 @@ class NodeMap:
                 units="hours since 1970-01-01 00:00:00.0",
                 calendar="gregorian"
             )
-            for t in range(130000) # tentative
+            for t in range(130000)  # ~15+ years
         ]
         startdatepath = "../src/startdate.txt"
         if os.path.exists(startdatepath):
@@ -309,7 +312,7 @@ class NodeMap:
         Creates an 'nca' structure for the master input template (json) using the swan mesh data.
         No variable data is loaded yet.
 
-        Later version: most of this should already be in input_master.json for the user to specify
+        TODO: most of this should already be in input_master.json for the user to specify
         """
 
         master_input = self.master_input
@@ -329,7 +332,6 @@ class NodeMap:
             nnode=self.num_nodes,
             ntime=self.num_timesteps,
             nelem=self.num_elements,
-
             nsnode=self.num_snodes,
             nafreq=self.num_afreqs,
             ndir=self.num_dirs
@@ -380,7 +382,9 @@ class NodeMap:
 
         groups = dict(
             s=dict(dimensions=["ntime", "nnode"], variables=variablesMat),
-            ss=dict(dimensions=["ntime", "nsnode", "nafreq", "ndir"], variables=variablesSpec)
+            ss=dict(dimensions=["ntime", "nsnode", "nafreq", "ndir"], variables=variablesSpec),
+            t=dict(dimensions=["nnode", "ntime"], variables=variablesMat),
+            st=dict(dimensions=["nnode", "ntime", "nafreq", "ndir"], variables=variablesSpec)
         )
         master_input["nca"]["groups"] = groups
 
@@ -407,13 +411,11 @@ class NodeMap:
             the start date is updated with the first time step of the month at the end
         """
         timestep_keys = []
+        mname = re.match(re_mat, mfile).groups()[0]
 
-        #print(f" (load_mat) reading from {filepath}")
-        mname = re.match(re_mat, mfile).groups()[0] # remove 'test' when ready <------
-
-        # mname: HS
-        # mfile: HS.mat
-        # filepath: ../BCSWANv5/2004/01/results/HS.mat
+        # mname:    "HS"
+        # mfile:    "HS.mat"
+        # filepath: "../BCSWANv5/2004/01/results/HS.mat"
 
         matfile_dict = {}
         matfile_dictx = {}
@@ -448,14 +450,15 @@ class NodeMap:
 
             self.start_date = timestep_keys[0]  # first timestep in the month
 
-
         except NotImplementedError as e:
             print(f"{e}!")
 
 
     def load_spc(self, filepath, sfile):
         """
-            spectra files are stored as .txt instead of .mat
+            Aggregates all spc files (stored as .txt instead of .mat) for one month.
+            AFREQS and NDIRS are already hardcoded as constants.
+            Each datum in the block is multiplied with that block's FACTOR.
 
             number of timesteps:
                 - equal to month, same as mat files.
@@ -464,23 +467,17 @@ class NodeMap:
                     - equal to number of lat+lon nodes (e.g. 22 pairs)
 
                     create table for that FACTOR block:
-                        - columns are each direction (e.g. 36 across)
-                        - rows are each frequency (e.g. 34 down)
+                        - columns are each direction "dir" (e.g. 36 across)
+                        - rows are each frequency "afreq" (e.g. 34 down)
 
             performance issue: dictionaries vs numpy arrays? mix? or use one over the other?
-
-            aggregate all spc files for one month
         """
         timestep_keys = []
-
-        #print(f" (load_spc) reading from {filepath}")
         sname = re.match(re_spc, sfile).groups()[0]
 
         s = open(filepath, "r")
 
         lonlats = []
-        #afreqs = []
-        #dirs = []
         num_lonlat, num_afreq, num_dir = 0., len(self.afreqs), len(self.dirs)
 
         spcfile = {}
@@ -489,35 +486,13 @@ class NodeMap:
         while metadata:
             line = s.readline()
             token = line.split()[0]
-
             if token == "LONLAT":
                 num_lonlat = int(s.readline().split()[0])
                 for ll in range(num_lonlat):
                     lonlat = s.readline().split()
                     lonlats.append((lonlat[0], lonlat[1]))
-                #print("LONLAT ->", num_lonlat)
-                """
-                elif token == "AFREQ":
-                    num_afreq = int(s.readline().split()[0])
-                    for af in range(num_afreq):
-                        afreq = s.readline().split()[0]
-                        afreqs.append(afreq)
-                    #print("AFREQ ->", num_lonlat)
-    
-                elif token == "NDIR":
-                    num_dir = int(s.readline().split()[0])
-                    for d in range(num_dir):
-                        dir = s.readline().split()[0]
-                        dirs.append(dir)
-                    #print("NDIR ->", num_dir)
-                """
-
             elif re.match(re_spcdate, token):
                 metadata = False
-
-        #self.afreqs = afreqs
-        #self.ndir = dirs
-        # some more info between above and tables below
 
         data = True
         while data:
@@ -525,30 +500,24 @@ class NodeMap:
             if re.match(re_spcdate, token):
                 timestep = datetime(int(token[:4]), int(token[4:6]), int(token[6:8]), int(token[9:11]))
                 timestep_keys.append(timestep)
-
                 lldict = {}
                 for lonlat in lonlats:
                     FACTOR = s.readline().split()[0].strip()
-
                     if FACTOR == "NODATA":  # no data for this lat-long
                         continue
-
                     factor = s.readline().split()[0].strip()
                     factor = float(factor)
-
                     fd_block = np.array(
                         [np.array([float(int(d)*factor) for d in s.readline().split()]) for afreq in range(num_afreq)]
                     )
-                    #lldict[lonlat] = (factor, fd)
                     lldict[lonlat] = fd_block
                 spcfile[timestep] = lldict
             else:
                 print("something went wrong!")
                 data = False
-
             line = s.readline()  # ready next line
             if not line:
-                #print("no line!")
+                # print("no line!")
                 data = False
 
         s.close()
@@ -557,102 +526,267 @@ class NodeMap:
         self.spcfile = spcfile
 
 
-    def upload_to_cache(self, filetype):
+    def upload_to_cache(self, filetype, group="s"):
         """
             Writing to NetCDF2D:
             A NetCDF2D object is created with the finished template and the contents from the node map
-                are written to the NetCDF2D object one timestep at a time.
-            if 'grid' is true, that means we need to re-load all static data as well as the time steps.
+                are written to the NetCDF2D object one timestep at a time if group "s" or "ss",
+                or one or more nodes at a time if group "t" or "st".
+            The grid ('static' data) only needs to be uploaded once.
 
-            upload_to_cache then empties both self.matfile1 and self.matfile2 --> {} for the next upload
+            Groups "t" and "st" use pandas to extract the transpose of data table information.
+
+            upload_to_cache then empties (--> {}) the self.matfile1 and self.matfile2,
+            or self.spcfile for the next upload.
         """
         netcdf2d = NetCDF2D(self.master_input)
 
-        # grid ('static' data) if reloading (only after session interruption or initial upload)
-        # ---------------------------
         if filetype == "grid":
-            #print("uploading grid data to cache...")
-            #start = time.time()
+            print("uploading grid data to cache...")
+
+            # --------------------------- grid
+            timesteps = np.array([
+                date2num(self.timesteps[t], units="hours since 1970-01-01 00:00:00.0", calendar="gregorian")
+                for t in range(self.num_timesteps)
+            ])
+            netcdf2d.nca.variables["time"][:] = timesteps
             netcdf2d.nca.variables["lat"][:] = self.lat
             netcdf2d.nca.variables["lon"][:] = self.lon
             netcdf2d.nca.variables["elem"][:] = self.elements
             netcdf2d.nca.variables["b"][:] = self.bathymetry
-
-            # spc variables:
             netcdf2d.nca.variables["afreq"][:] = self.afreqs
             netcdf2d.nca.variables["dir"][:] = self.dirs
 
-            for t, ts in enumerate(self.timesteps):
-                netcdf2d.nca.variables["time"][t] = date2num(
-                    self.timesteps[t],
-                    units="hours since 1970-01-01 00:00:00.0",
-                    calendar="gregorian"
-                )
-
-            #end = time.time()
-            #print("`-- grid upload time:", end-start, "\n")
-        # ---------------------------
-
         elif filetype == "mat":
+            # need to find from variable names. TODO: improve
             MAT_val1, MAT_val2 = "", ""
             variable1, variable2 = "", ""
             MAT_val1 = list(self.matfile1.keys())[0]
             if self.matfile2:
                 MAT_val2 = list(self.matfile2.keys())[0]
-
             for kvar, val in self.temp_var_names.items():
                 if val["matfile name"] == MAT_val1:
                     variable1 = kvar
                 if val["matfile name"] == MAT_val2 and MAT_val2 != "":
                     variable2 = kvar
 
-            m1start = time.time()
-            for kv, n in self.matfile1[MAT_val1].items():
-                ts = kv[-15:]
-                date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
-                i = self.timesteps.index(date) # getting the index for that timestep
-                try:
-                    netcdf2d["s", variable1, i] = n
-                except ValueError:
-                    raise
-            #m1end = time.time()
-            #print("            `-- m1 upload time:", m1end - m1start)
+            if group == "t":
+                m1start = time.time()
 
-            if self.matfile2:
-                for kv, n in self.matfile2[MAT_val2].items():
+                # --------------------------- group t, matfile 1
+                mf1pd = pd.DataFrame.from_dict(self.matfile1[MAT_val1])
+                transpose = np.array(mf1pd.iloc[0:self.num_nodes])
+                timedates = [
+                    datetime(int(k[-15:][:4]), int(k[-15:][4:6]), int(k[-15:][6:8]), int(k[-15:][9:11]))
+                    for k in mf1pd.columns
+                ]
+                tds = [self.timesteps.index(t) for t in timedates]
+                num_nodes_chunk = 10000
+                for node in range(num_nodes_chunk):
+                    netcdf2d["t", "hs", node, tds] = transpose[node][:]
+
+                """
+                num_chunks = 1 # 15 # done in chunks to prevent RAM spike. 15 * 11863 = 177945
+                chunk_size = 1000
+                for chunk in range(num_chunks):
+                    nodes = [
+                        n for n in range(chunk*chunk_size, (chunk+1)*chunk_size) if n < self.num_nodes
+                    ]
+                    netcdf2d["t", "hs", nodes, tds] = transpose[nodes][:]
+                """
+
+                m1end = time.time()
+                print()
+                print("            `-- m1 upload time:", m1end - m1start)
+
+                if self.matfile2:
+                    m2start = time.time()
+
+                    # --------------------------- group t, matfile 2
+                    mf2pd = pd.DataFrame.from_dict(self.matfile2[MAT_val2])
+                    transpose = np.array(mf2pd.iloc[0:self.num_nodes])
+                    timedates = [
+                        datetime(int(k[-15:][:4]), int(k[-15:][4:6]), int(k[-15:][6:8]), int(k[-15:][9:11]))
+                        for k in mf2pd.columns
+                    ]
+                    tds = [self.timesteps.index(t) for t in timedates]
+                    num_nodes_chunk = 10000
+                    for node in range(num_nodes_chunk):
+                        netcdf2d["t", "hs", node, tds] = transpose[node][:]
+                    """
+                    num_chunks = 1 # 15  # done in chunks to prevent RAM spike. 15 * 11863 = 177945
+                    chunk_size = 1000
+                    for chunk in range(num_chunks):
+                        nodes = [
+                            n for n in range(chunk * chunk_size, (chunk + 1) * chunk_size) if n < self.num_nodes
+                        ]
+                        netcdf2d["t", "hs", nodes, tds] = transpose[nodes][:]
+                    """
+
+
+                    m2end = time.time()
+                    print("            `-- m2 upload time:", m2end - m1end)
+
+            elif group == "s":
+                m1start = time.time()
+
+                # --------------------------- group s, matfile 1
+                for kv, n in self.matfile1[MAT_val1].items():
                     ts = kv[-15:]
                     date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
-                    i = self.timesteps.index(date)
+                    t_index = self.timesteps.index(date)
                     try:
-                        netcdf2d["s", variable2, i] = n
+                        netcdf2d["s", variable1, t_index] = n
                     except ValueError:
                         raise
-                #m2end = time.time()
-                #print("            `-- m2 upload time:", m2end - m1end)
+
+
+                m1end = time.time()
+                print("            `-- m1 upload time:", m1end - m1start)
+
+                if self.matfile2:
+                    m2start = time.time()
+
+                    # --------------------------- group s, matfile 2
+                    for kv, n in self.matfile2[MAT_val2].items():
+                        ts = kv[-15:]
+                        date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
+                        t_index = self.timesteps.index(date)
+                        try:
+                            netcdf2d["s", variable2, t_index] = n
+                        except ValueError:
+                            raise
+
+
+                    m2end = time.time()
+                    print("            `-- m2 upload time:", m2end - m1end)
 
             # erase for the next .mat file in the current month folder
             self.matfile1 = {}
             self.matfile2 = {}
 
         elif filetype == "spc":
-            # time variables already written in when 'upload_to_cache("grid")' was called.
-            # only thing needed is to
-            s_start = time.time()
-            for date, snodes in self.spcfile.items():
-                i = self.timesteps.index(date)
 
-                for snode, afreqs in snodes.items(): # snode will have an index
+            if group == "st":
+                s_start = time.time()
 
-                    sn = self.snodes.index((snode[0], snode[1]))
-                    #print(sn)
-                    netcdf2d["ss", "spectra", i, sn] = afreqs
-            s_end = time.time()
-            print("snode time:", s_end-s_start)
+                # --------------------------- group st
+                # TODO
+                #spc_pd = pd.DataFrame.from_dict(self.spcfile)
+                #transpose = np.array(spc_pd.iloc[0:self.num_nodes])
+                #timedates = [
+                #    datetime(int(k[-15:][:4]), int(k[-15:][4:6]), int(k[-15:][6:8]), int(k[-15:][9:11]))
+                #    for k in mf1pd.columns
+                #]
+                #tds = [self.timesteps.index(t) for t in timedates]
+                #for i in range(1000):
+                #    netcdf2d["st", "spectra", i, tds] = transpose[i][:]
+
+                s_end = time.time()
+                print("            `-- snode time:", s_end - s_start)
+
+            elif group == "ss":
+                s_start = time.time()
+
+                # --------------------------- group ss
+                for date, snodes in self.spcfile.items():
+                    t_index = self.timesteps.index(date)
+                    for snode, afreqs in snodes.items():  # snode will have an index
+                        sn = self.snodes.index((snode[0], snode[1]))
+                        netcdf2d["ss", "spectra", t_index, sn] = afreqs
+
+
+                s_end = time.time()
+                print("            `-- snode time:", s_end-s_start)
+
+            # erase for the next .spc file in the current month folder
             self.spcfile = {}
 
 
 
-    def upload_files(self):
+
+    def upload_files(self, group="s"):
+        """
+        maybe divide into separate groups: "s", "t", "ss", "st
+        """
+        if group == "s":
+            self.upload_files_s()
+        elif group == "t":
+            self.upload_files_t()
+
+    def upload_files_t(self):
+        """
+        Scans through all years and months for 1 of the results files (e.g. HS.mat) from a checklist.
+        Pops from checklist when that variable is finished.
+
+        - Pseudocode -
+
+        for each variable:
+            for each year:
+                for each month:
+                    for each file in the results folder:
+                        if .mat file:
+                            load_mat( .mat )
+                            upload_to_cache("mat", "s")
+                        else if .spc file:
+                            load_spc( .spc )
+                            upload_to_cache("spc", "s")
+        """
+
+        # TODO: initialize checklist, in case of signal interruption
+        """
+        with open("../src/checklist.txt", 'w+') as f:
+            mat_checklist = f.read().splitlines()
+        permanent_checklist = mat_checklist
+        """
+
+        print("BCSWANv5 (transpose)")
+        self.upload_to_cache("grid")  # what happens when we dont do this?
+
+        search_files = True
+        while search_files:
+            print("\nsearching for", self.file_checklist[0])
+            for year in sorted(os.listdir(self.data_folder)):
+                if year != 'Mesh' and not year.startswith('.') and os.path.isdir(self.data_folder + "/" + year):  # avoid '.DS_Store' file
+                    print("|--", year)
+                    for month in sorted(os.listdir(self.data_folder + "/" + year)):
+                        if not month.startswith('.') and os.path.isdir(self.data_folder + "/" + year + "/" + month):
+                            print("    |--", month)
+                            results = os.path.join(self.data_folder, year, month, "results")
+                            current_file = self.file_checklist[0]
+                            if current_file in [name for name in os.listdir(results)]:
+                                if re.match(re_mat, current_file) or re.match(re_mat_test, current_file):
+                                    start = time.time()
+                                    print("        |--", current_file)
+
+                                    mfilepath = os.path.join(self.data_folder, year, month, "results", current_file)
+                                    self.load_mat(mfilepath, current_file)
+
+                                    endloadmat = time.time()
+                                    print("            |-- load_mat time:", endloadmat - start)
+
+                                    self.upload_to_cache("mat", "t")
+
+                                elif re.match(re_spc, current_file):  # .spc should put into separate method
+                                    start = time.time()
+                                    print("        |--", current_file)
+
+                                    sfilepath = os.path.join(self.data_folder, year, month, "results", current_file)
+                                    #self.load_spc(sfilepath, current_file)  #
+
+                                    endloadspc = time.time()
+                                    print("            |-- load_spc time:", endloadspc - start)
+
+                                    #self.upload_to_cache("spc")
+
+            self.file_checklist.pop(0)
+
+            if len(self.file_checklist) == 0:
+                search_files = False  # all done
+
+
+
+    def upload_files_s(self):
         """
         - Pseudocode -
 
@@ -668,7 +802,6 @@ class NodeMap:
         both mat and spc files will be in the folder, but the mat files are 'prioritized'...
             if spc files are read first, will have timesteps but the number of nodes will be completely different and
             not part of the template
-
         """
         #start_ = time.time()
 
@@ -700,7 +833,8 @@ class NodeMap:
                                 continue
                             else: search_month = True
                         results = os.path.join(data_folder, year, month, "results")
-                        files = sorted([name for name in os.listdir(results)])  # e.g. ['HS.mat'] or ['HS.mat', 'WIND.mat', ... ]
+                        files = sorted([name for name in os.listdir(results) if name in self.file_checklist])
+                        # e.g. ['HS.mat'] or ['HS.mat', 'WIND.mat', ... ]
                         for filename in files:
 
                             if re.match(re_mat, filename) or re.match(re_mat_test, filename):
@@ -831,7 +965,7 @@ class NodeMap:
         with Dataset(filepath, "r") as src_file:
             self.ncdump(src_file, verb)
 
-    def ncdump(nc_fid, verb=True):
+    def ncdump(self, nc_fid, verb=True):
         """
         ncdump outputs dimensions, variables and their attribute information.
         The information is similar to that of NCAR's ncdump utility.
@@ -908,7 +1042,7 @@ class NodeMap:
 def main(*args):
     """
         from the command line:
-            $ netcdf-swan.py upload
+            $ python3 netcdf-swan.py upload
     """
     # get rid of parentheses and script name
     args = args[0]
@@ -928,18 +1062,18 @@ def main(*args):
         start_month = args[i]
         i += 1
 
+    #print(uploading, downloading, load_mesh, start_year, start_month)
+
+
     if uploading:
-        nm = NodeMap() #reloading)
-        nm.upload_files() #start_year, start_month) # should be automatic? read from cache? or save to a txt file
-
-
+        nm = NodeMap()
+        nm.upload_files()
 
     elif downloading:
         nm = NodeMap()
-        nm.download()
+        nm.download()  # needs parameters
 
-
-    print("*** finished main()")
+    print("*** finished ***")
 
 
 if __name__ == '__main__':

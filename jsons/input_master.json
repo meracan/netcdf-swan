@@ -11,7 +11,46 @@
     "mesh folder": "../BCSWANv5/Mesh",
     "swanv5": "../s3/SWANv5/SWANv5.nca",
     "test data folder": "./data",
-    "test mesh folder": "./data/Mesh"
+    "test mesh folder": "./data/Mesh",
+    "file checklist": [
+            "WIND.mat",
+            "HS.mat",
+            "TPS.mat",
+            "TMM10.mat",
+            "TM01.mat",
+            "TM02.mat",
+            "PDIR.mat",
+            "DIR.mat",
+            "DSPR.mat",
+            "QP.mat",
+            "TRANSP.mat",
+            "c_dixon.spc",
+            "c_eliz.spc",
+            "campbell.spc",
+            "e_dell.spc",
+            "hotspots.spc",
+            "line_n.spc",
+            "line_s.spc",
+            "line_w.spc",
+            "m_nomad.spc",
+            "n_hecat.spc",
+            "ne_isle.spc",
+            "neah.spc",
+            "p_renf.spc",
+            "perouse.spc",
+            "s_hecat.spc",
+            "s_morsb.spc",
+            "s_nomad.spc",
+            "sombrio.spc",
+            "sooke.spc",
+            "tarbotn.spc",
+            "tillamk.spc",
+            "tofino.spc",
+            "w_dixon.spc",
+            "w_morsb.spc",
+            "w_otter.spc",
+            "w_washn.spc"
+        ]
   },
   "start year": 2004,
   "start month": 1,
@@ -38,6 +77,11 @@
       },
       "t":{"dimensions":["nnode","ntime"],"variables":{
           "a":{"type":"f4", "units":"m" ,"standard_name":"a variable" ,"long_name":"Description of a"}
+        }
+      },
+      "ss":{"dimensions":["ntime","nsnode"],"variables":{
+          "hs":{"type": "f8", "units": "m", "standard name": "significant wave height", "long name": "significant wave height (in s)"},
+          "u10": {"type": "f8", "units": "m/s", "standard name": "u Wind velocity", "long name": "u Wind velocity, m/s"}
         }
       }
     }

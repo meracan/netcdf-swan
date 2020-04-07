@@ -82,7 +82,9 @@
 import json
 import os, sys, time
 import numpy as np
+import pandas as pd
 import re
+
 import pprint as pp
 from scipy.io import loadmat
 import matplotlib.pyplot as plt
@@ -145,9 +147,10 @@ class NodeMap:
 
         # hard coded for now:
         self.afreqs = [
-            0.0345,0.0377,0.0413,0.0452,0.0494,0.0540,0.0591,0.0647,0.0707,0.0774,0.0846,
-            0.0926,0.1013,0.1108,0.1212,0.1326,0.1450,0.1586,0.1735,0.1898,0.2076,0.2271,
-            0.2484,0.2717,0.2973,0.3252,0.3557,0.3891,0.4256,0.4656,0.5093,0.5571,0.6094,0.6666
+            0.0345,0.0377,0.0413,0.0452,0.0494,0.0540,0.0591,0.0647,0.0707,0.0774,
+            0.0846,0.0926,0.1013,0.1108,0.1212,0.1326,0.1450,0.1586,0.1735,0.1898,
+            0.2076,0.2271,0.2484,0.2717,0.2973,0.3252,0.3557,0.3891,0.4256,0.4656,
+            0.5093,0.5571,0.6094,0.6666
         ]
         self.dirs = [265.0-10*i for i in range(36)]
         self.num_afreqs = len(self.afreqs)  # 34
@@ -395,6 +398,7 @@ class NodeMap:
     # =====================================
     def load_mat(self, filepath, mfile):
         """
+            'filepath' and 'mfile' could be merged into one?
             Loads one mat file into self.matfile1 and self.matfile2 if there are both X and Y coordinates
             (e.g. WIND.mat), otherwise just stores into self.matfile1.
 
@@ -805,17 +809,15 @@ class NodeMap:
         """
         #start_ = time.time()
 
-        # 'startdate.txt' stores the time step from the month where the upload stopped.
-        # a new NodeMap sets self.start_year and self.start_month initially. if reloading, upload mesh data first
-        sd = open("../src/startdate.txt", "w+")  # should open each month? each year? or does it matter?
         data_folder = self.data_folder
         search_year = self.start_year == ""
         search_month = self.start_month == ""
         reloading = search_year != ""
-        if reloading:
-            self.upload_to_cache("grid")
 
-        # print("BCSWANv5")
+        #if reloading:
+        #    self.upload_to_cache("grid", "s") # only need to do this once anyway?
+
+        print("BCSWANv5")
         for year in sorted(os.listdir(data_folder)):
             if year != 'Mesh' and not year.startswith('.') and os.path.isdir(data_folder + "/" + year):  # avoid '.DS_Store' file
                 # print("|--", year)
@@ -828,10 +830,16 @@ class NodeMap:
                     if not month.startswith('.') and os.path.isdir(data_folder + "/" + year + "/" + month):
                         # print("    |--", month)
                         if not search_month:  # skip through until month is found
-                            if month != str(self.start_month):
-                                #print("ERROR month")
+                            if str(int(month)) != str(self.start_month):
                                 continue
                             else: search_month = True
+
+                        start_date = datetime(int(year), int(month), 1)
+                        with open("../src/startdate.txt", "w+") as sd:
+                            sd.seek(0)
+                            sd.write(str(start_date))
+                            sd.truncate()
+
                         results = os.path.join(data_folder, year, month, "results")
                         files = sorted([name for name in os.listdir(results) if name in self.file_checklist])
                         # e.g. ['HS.mat'] or ['HS.mat', 'WIND.mat', ... ]
@@ -860,17 +868,8 @@ class NodeMap:
                                 # print("            |-- load_spc time:", endloadspc - start)
                                 self.upload_to_cache("spc")
 
-                                # endupload = time.time()
-                                # print("            `-- upload_to_cache time:", endupload - endloadspc)
-
-                        # store start date
-                        sd.seek(0)
-                        sd.write(str(self.start_date))
-                        sd.truncate()
-
-        sd.close()
-        # _end = time.time()
-        # print("Total time:", _end-start_)
+        #_end = time.time()
+        #print("Total time:", _end-start_)
 
 
     # ===================== below not needed anymore?

@@ -8,14 +8,14 @@
             comparing shapes of matfile arrays vs nc file arrays
 """
 
-import sys, os
+import sys, os, time
 import json
 import re
 import datetime
 import inspect
 import pytest
 import pprint as pp
-from scipy.io import loadmat
+from scipy.io import loadmat, savemat
 import pandas as pd
 from tqdm import tqdm
 from netCDF4 import Dataset
@@ -56,6 +56,13 @@ def test_delete_cache():
         print("cache deleted")
     except:
         print("couldn't delete cache")
+
+    try:
+        os.remove("../src/startdate.txt")
+        print("startdate.txt deleted")
+    except:
+        print("cannot find startdate.txt")
+
 
 
 test_year_month = [('2004', '01'), ('2004', None), (None, None)]
@@ -145,76 +152,262 @@ def netcdf2d_temporal_WIND():
 
 
 
-
-
-
-# moment of truth...
-def ttest_HS_large():
-    # half a gigabyte
+def test_upload_to_cache_auto():
 
     nm = NodeMap()
-    nm.load_mats('2004', '01')
+
+    # need grid first
+    nm.upload_to_cache("grid")
+
+    nm.load_mat("../BCSWANv5/2004/01/results/HS.mat", "HS.mat")
+    print("matfile:", nm.matfile1)
+
+    # upload to cache clears the matfile contents.
+    nm.upload_to_cache("mat")
+    print("matfile emptied:", nm.matfile1)
+
+    # load the next month
+    nm.load_mat("../BCSWANv5/2004/02/results/HS.mat", "HS.mat")
+    print("matfile:", nm.matfile1)
+
+    nm.upload_to_cache("mat")
+    print("matfile emptied:", nm.matfile1)
 
 
-    # 'overriding' nm_from_mats.upload()
-    # ----------------------
-    print("- Upload -")
-    print("*** initializing NetCDF2D object")
+def test_upload_to_cache_manual():
+
+    nm = NodeMap()
+    nm.upload_to_cache("grid")
+    nm.load_mat("../BCSWANv5/2004/01/results/no_test/HS.mat", "HS.mat") # manual?
+
+
+
+    # overriding upload_to_cache for first mat file:
+    # ---------------------------------
     netcdf2d = NetCDF2D(nm.master_input)
 
-    print("*** loading nca data into NetCDF2D object")
-    for kv, n in tqdm(nm.matfiles['HS_'].items()):
+    MAT_val1, MAT_val2 = "", ""
+    variable1, variable2 = "", ""
+    MAT_val1 = list(nm.matfile1.keys())[0]
+    if nm.matfile2:
+        MAT_val2 = list(nm.matfile2.keys())[0]
+
+    for kvar, val in nm.temp_var_names.items():
+        if val["matfile name"] == MAT_val1:
+            variable1 = kvar
+        if val["matfile name"] == MAT_val2 and MAT_val2 != "":
+            variable2 = kvar
+
+    m1start = time.time()
+    for kv, n in nm.matfile1[MAT_val1].items():
         ts = kv[-15:]
         date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
-        i = nm.timesteps.index(date)
-        netcdf2d["s", "hs", i] = n
+        i = nm.timesteps.index(date)  # getting the index for that timestep
+        try:
+            netcdf2d["s", variable1, i] = n
 
-    print("*** NetCDF2d created and shipped")
-    # ----------------------
+        except ValueError:
+            raise
+    m1end = time.time()
+    print("            `-- m1 upload time:", m1end - m1start)
+
+    if nm.matfile2:
+        for kv, n in nm.matfile2[MAT_val2].items():
+            ts = kv[-15:]
+            date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
+            i = nm.timesteps.index(date)
+            try:
+                netcdf2d["s", variable2, i] = n
+            except ValueError:
+                raise
+        m2end = time.time()
+        print("            `-- m2 upload time:", m2end - m1end)
+
+    nm.matfile1 = {}
+    nm.matfile2 = {}
+    # ---------------------------------
 
 
+    nm.load_mat("../BCSWANv5/2004/02/results/HS.mat", "HS.mat")
+
+    # overriding upload_to_cache for second matfile:
+    # ---------------------------------
+    netcdf2d = NetCDF2D(nm.master_input)
+
+    MAT_val1, MAT_val2 = "", ""
+    variable1, variable2 = "", ""
+    MAT_val1 = list(nm.matfile1.keys())[0]
+    if nm.matfile2:
+        MAT_val2 = list(nm.matfile2.keys())[0]
+
+    for kvar, val in nm.temp_var_names.items():
+        if val["matfile name"] == MAT_val1:
+            variable1 = kvar
+        if val["matfile name"] == MAT_val2 and MAT_val2 != "":
+            variable2 = kvar
+
+    m1start = time.time()
+    for kv, n in nm.matfile1[MAT_val1].items():
+        ts = kv[-15:]
+        date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
+        i = nm.timesteps.index(date)  # getting the index for that timestep
+        try:
+            netcdf2d["s", variable1, i] = n
+        except ValueError:
+            raise
+    m1end = time.time()
+    print("            `-- m1 upload time:", m1end - m1start)
+
+    if nm.matfile2:
+        for kv, n in nm.matfile2[MAT_val2].items():
+            ts = kv[-15:]
+            date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
+            i = nm.timesteps.index(date)
+            try:
+                netcdf2d["s", variable2, i] = n
+            except ValueError:
+                raise
+        m2end = time.time()
+        print("            `-- m2 upload time:", m2end - m1end)
+
+    nm.matfile1 = {}
+    nm.matfile2 = {}
+    # ---------------------------------
 
 
-def test_netcdf2d():
+def mat_table(filename):
+    """
+    creates a pandas dataframe.
+    """
+    mfile = re.search(re_mat, filename).groups()[0]  # remove 'test' when ready
+    #print(filename, "-->", mfile)
+
+    matfile_dictx = {}
+    matfile_dicty = {}
+    try:
+        matfile = loadmat(filename)
+        matfile.pop('__header__')
+        matfile.pop('__version__')
+        matfile.pop('__globals__')
+        for k, v in matfile.items():
+            v_sq = np.squeeze(v)
+            if re.match(re_x, k):
+                matfile_dictx.update({k: v_sq})
+            elif re.match(re_y, k):
+                matfile_dicty.update({k: v_sq})
+            else:
+                matfile_dictx.update({k: v_sq})
+    except NotImplementedError as e:
+        print(f"{e}!")
+
+    return matfile_dictx, matfile_dicty
+
+
+def test_upload_to_cache_transp():
+
+    # attempting transpose of data. (Only 1d matfiles, not WIND.mat, etc.)
     nm = NodeMap()
-    nm.upload_files()
+
+    nm.upload_to_cache("grid")
+
+    m1start = time.time()
+    # overriding upload_to_cache for first mat file:
+    # ---------------------------------
+    nm.matfile1["HS"], _ = mat_table("../BCSWANv5/2004/01/results/notest/HS.mat")
+    mf1pd_1 = pd.DataFrame.from_dict(nm.matfile1["HS"])
+
+    netcdf2d = NetCDF2D(nm.master_input)
+    timesteps1 = np.array(mf1pd_1.iloc[0:nm.num_nodes])
+    timedates = [
+        datetime(int(k[-15:][:4]), int(k[-15:][4:6]), int(k[-15:][6:8]), int(k[-15:][9:11]))
+        for k in mf1pd_1.columns
+    ]
+    tds = [nm.timesteps.index(t) for t in timedates]
+
+    netcdf2d["t", "hs", 0:1000, tds] = timesteps1[:1000][:]
+    nm.matfile1 = {}
+    # ---------------------------------
+    m1end = time.time()
+    print("time taken:", m1end-m1start, "\n")
+
+
+    raise
+    m2start = time.time()
+    # overriding upload_to_cache for second matfile (next month):
+    # ---------------------------------
+    nm.matfile1["HS"], _ = mat_table("../BCSWANv5/2004/02/results/HS.mat")
+    mf1pd_2 = pd.DataFrame.from_dict(nm.matfile1["HS"])
+
+    netcdf2d = NetCDF2D(nm.master_input)
+
+    timesteps2 = np.array(mf1pd_2.iloc[0:nm.num_nodes])
+    timedates = [
+        datetime(int(k[-15:][:4]), int(k[-15:][4:6]), int(k[-15:][6:8]), int(k[-15:][9:11]))
+        for k in mf1pd_2.columns
+    ]
+    tds = [nm.timesteps.index(t) for t in timedates]
+
+    netcdf2d["t", "hs", 0:10, tds] = timesteps2[:10][:]
+    nm.matfile1 = {}
+    # ---------------------------------
+    m2end = time.time()
+    print("time taken:", m2end-m2start, "\n")
+    print("total time:", m2end-m1start)
 
 
 
+def test_netcdf2d_t():
+    nm = NodeMap()
+    nm.upload_files("t")
+
+def test_netcdf2d_s():
+    nm = NodeMap()
+    nm.upload_files("s")
+
+
+
+"""
 @pytest.mark.parametrize("test_year, test_month", test_year_month)
 def ttest_netcdf2d_old(test_year, test_month):
     nm = NodeMap()
     nm.load_mats(test_year, test_month)
     nm.upload()
+"""
 
 
-def ttest_netcdf2d_read_completed_cache():
+def test_netcdf2d_read_completed_cache():
 
     print("attempting to read NetCDF2D object from cache")
-    with open("../read_master.json") as rm:
+    with open("../jsons/read_master.json") as rm:
         read_input = json.load(rm)
     netcdf2d = NetCDF2D(read_input)
     #print("Summary:")
     #pp.pprint(netcdf2d_read_only.info())
 
     print("\nReading NetCDF2D object...\n")
-    t = 3
-    n = 100778
 
+    #print(f"*    (spatial) hs, 5 0:", netcdf2d["s", "hs", 5, 0])
+    #print(f"*    (temporal) hs, 0 5:", netcdf2d["t", "hs", 0, 5])
 
+    #print(f"*    (spatial) hs, 0 5:", netcdf2d["s", "hs", 0, 5])
+    #print(f"*    (temporal) hs, 5 0:", netcdf2d["t", "hs", 5, 0])
 
-    # need to read what the timestep is
-    print(f"*    significant wave height of node {n} at time {t}:\n", netcdf2d["s", "hs", t, n])
-    print(f"*    wind x of node {n} at time {t}:\n", netcdf2d["s", "u10", t, n])
-    #pp.pprint(dir(netcdf2d_read_only))
-    #pp.pprint(dir(netcdf2d_read_only.nca.variables["time"))
+    for n in range(20):
+        rnd_time = np.random.randint(745)
+        rnd_node = np.random.randint(10000)
+        s = netcdf2d["s", "hs", rnd_time, rnd_node]
+        t = netcdf2d["t", "hs", rnd_node, rnd_time]
+        assert s == t
+        #print(s, "==", t, "?")
 
-    print("static data:")
+    """
+    print("\n\nstatic data:")
     print("----time")
-    for tt in netcdf2d.nca.variables["time"]:
-
+    print("size:", len(netcdf2d.nca.variables["time"]))
+    for i, tt in enumerate(netcdf2d.nca.variables["time"]):
         print(num2date(tt, units="hours since 1970-01-01 00:00:00.0", calendar="gregorian"))
-
+        if i > 20:
+            break
     print("----lat")
     print(netcdf2d.nca.variables["lat"][:20])
     print("----lon")
@@ -224,14 +417,22 @@ def ttest_netcdf2d_read_completed_cache():
     print("----elem")
     print(netcdf2d.nca.variables["elem"][:20])
 
+    """
 
-    #for tt in netcdf2d_read_only.nca.variables["time"]:
-    #    print(tt)
-    #print(netcdf2d_read_only.groups["s"].attributes["hs"])
-    #print(f"actual time:", netcdf2d_read_only["s", "t"])
-    # print("*    wind x velocity of nodes in first timestep:", netcdf2d_read_only["s", "u10", 0])
 
-    #print("*** finished ***")
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -425,31 +626,64 @@ def test_get_timesteps():
     #print(timesteps[0], timesteps[1], timesteps[-2], timesteps[-1])
 
 
-def mat_table(filename):
 
-    mfile = re.search(re_mat, filename).groups()[0]  # remove 'test' when ready
-    #print(filename, "-->", mfile)
+
+
+def test_transp(matfile):
+
+    # transpose everything
+    nm = NodeMap()
+    #nm.print_netcdf("../s3/SWANv5/ss/SWANv5_ss_spectra_733_1_0_0.nc")
+    #print("***")
+    #nm.print_netcdf("../s3/SWANv5/s/SWANv5_s_hs_5_0.nc")
+    #print(nm.timesteps) # ..., datetime.datetime(2015, 9, 27, 14, 0), ...
+    #print("***")
+
+
+    matfile = '../BCSWANv5/2004/01/results/' + matfile
+
+    # ----------
+    mfile = re.search(re_mat, matfile).groups()[0]  # remove 'test' when ready
+    # print(filename, "-->", mfile)
     matfile_dictx = {}
     matfile_dicty = {}
     try:
-        matfile = loadmat(filename)
+        matfile = loadmat(matfile)
         matfile.pop('__header__')
         matfile.pop('__version__')
         matfile.pop('__globals__')
+        #node = []
+        #x = [v for k, v in enumerate(matfile.items())]
+
+        #print(x)
+
         for k, v in matfile.items():
             v_sq = np.squeeze(v)
+
             if re.match(re_x, k):
                 matfile_dictx.update({k: v_sq})
             elif re.match(re_y, k):
                 matfile_dicty.update({k: v_sq})
             else:
                 matfile_dictx.update({k: v_sq})
+
     except NotImplementedError as e:
         print(f"{e}!")
 
     mf1pd = pd.DataFrame.from_dict(matfile_dictx)
+    print(mf1pd.head())
     mf2pd = pd.DataFrame.from_dict(matfile_dicty)
-    return mf1pd, mf2pd
+
+
+    
+    #if len(matfile_dict) == 0:
+    #    nm.matfile1[mname + "X"] = matfile_dictx
+    #    nm.matfile2[mname + "Y"] = matfile_dicty
+    #else:
+    #    nm.matfile1[mname] = matfile_dict
+    
+
+    #return mf1pd, mf2pd
 
 
 
@@ -502,8 +736,8 @@ def test_compare_values(matfile, var1, var2=""):
                 assert nc_value == mt_value
                 #print(src_file.variables[var1][:][part][n], mt1.iloc[n][mt1.columns[t]]) #
                 #print()
-                #print(f"{mt1.columns[t]}, node {n}...ncfile: {nc_value}, matfile: {mt1.iloc[n][mt1.columns[t]]}")
-        #print()
+                print(f"{mt1.columns[t]}, node {n} ... \t\tncfile: {nc_value}, matfile: {mt_value}")
+        print()
 
     print("--------")
     if var2:
@@ -521,8 +755,8 @@ def test_compare_values(matfile, var1, var2=""):
                     nc_value = src_file.variables[var2][:][part][n]
                     mt_value = mt2.iloc[n][mt2.columns[t]]
                     assert nc_value == mt_value
-                    #print(f"{mt2.columns[t]}, node {n}...ncfile: {nc_value}, matfile: {mt2.iloc[n][mt2.columns[t]]}")
-            #print()
+                    print(f"{mt2.columns[t]}, node {n} ... \t\tncfile: {nc_value}, matfile: {mt_value}")
+            print()
 
 
     #print("--------")
@@ -541,8 +775,39 @@ if __name__ == "__main__":
 
     #test_get_timesteps()
 
+
+    # ---------------------------
     #test_delete_cache()
-    #test_netcdf2d()
+    #test_upload_to_cache_auto()
+    #test_netcdf2d_read_completed_cache()
+
+
+    # ---------------------------
+    #test_delete_cache()
+    #test_upload_to_cache_manual()
+    #test_netcdf2d_read_completed_cache()
+
+
+    # ---------------------------
+    #test_delete_cache()
+    #test_upload_to_cache_transp()
+    #test_netcdf2d_read_completed_cache()
+
+
+    # ---------------------------
+    #test_delete_cache()
+    #test_netcdf2d_s()
+    #test_netcdf2d_read_completed_cache()
+
+    # ---------------------------
+    #test_delete_cache()
+    #test_netcdf2d_t()
+    #test_netcdf2d_read_completed_cache()
+
+
+
+    #test_transp("HS.mat")
+
     #print("======================== did it work?")
     #ttest_netcdf2d_read_completed_cache()
 
@@ -554,10 +819,13 @@ if __name__ == "__main__":
 
     #test_compare_values('WIND_6hr.mat', "u10", "v10")
     #test_compare_values('HS_6hr.mat', "hs")
+    #print()
 
-    test_compare_values("WIND.mat", "u10", "v10")
-    test_compare_values("HS.mat", "hs")
-    test_compare_values("QP.mat", "qp")
+    #test_compare_values("WIND.mat", "u10", "v10")
+    #test_compare_values("HS.mat", "hs")
+    #test_compare_values("QP.mat", "qp")
+
+    #test_compare_spc_values("", "spectra")
 
     #test_shapes()
 

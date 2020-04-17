@@ -304,21 +304,20 @@ class NodeMap:
 
     def create_nca_input(self):
         """
-        Creates an 'nca' structure for the master input template (json) using the swan mesh data.
-        No variable data is loaded yet.
-
-        TODO: most of this should already be in input_master.json for the user to specify
+            Creates an 'nca' structure for the master input template (json) using the swan mesh data.
+            No variable data is loaded yet.
+            Most of this should already be in input_master.json for the user to specify
         """
 
         master_input = self.master_input
 
         metadata = dict(
-            title="File description",
-            institution="Specifies where the original data was produced",
-            source="The method of production of the original data",
-            history="Provides an audit trail for modifications to the original data",
-            references="Published or web-based references that describe the data or methods used to produce it",
-            comment="Miscellaneous information about the data or methods used to produce it"
+            title="?File description?",
+            institution="?Specifies where the original data was produced?",
+            source="?The method of production of the original data?",
+            history="?Provides an audit trail for modifications to the original data?",
+            references="?Published or web-based references that describe the data or methods used to produce it?",
+            comment="?Miscellaneous information about the data or methods used to produce it?"
         )
         master_input["metadata"] = metadata
 
@@ -360,7 +359,7 @@ class NodeMap:
 
         # temporal data
         variablesMat = {}
-        for k, v in self.temp_var_names.items():
+        for k, v in self.var_names.items():
             var = dict(type="float32", units=v["units"], standard_name=v["standard name"], long_name=v["long name"])
             variablesMat.update({k: var})
 
@@ -395,8 +394,6 @@ class NodeMap:
             (e.g. WIND.mat), otherwise just stores into self.matfile1.
 
             The header, version and globals are popped for now. (might need later?)
-
-            (self.timesteps used to be replaced each time)
 
             'np.squeeze()' is needed to get rid of nested arrays like 'array([[-22.5, -18.0, -36.7, ...]])'
 
@@ -447,7 +444,8 @@ class NodeMap:
             self.start_date = timestep_keys[0]  # first timestep in the month
 
         except NotImplementedError as e:
-            print(f"{e}!")
+            #print(f"{e}!")
+            pass
 
 
     def load_spc(self, filepath, sfile):
@@ -465,8 +463,6 @@ class NodeMap:
                     create table for that FACTOR block:
                         - columns are each direction "dir" (e.g. 36 across)
                         - rows are each frequency "afreq" (e.g. 34 down)
-
-            performance issue: dictionaries vs numpy arrays? mix? or use one over the other?
         """
         timestep_keys = []
         sname = re.match(re_spc, sfile).groups()[0]
@@ -518,7 +514,7 @@ class NodeMap:
 
         s.close()
 
-        self.start_date = timestep_keys[0]  # first timestep in the month
+        self.start_date = timestep_keys[0]  # save first timestep in the month
         self.spcfile = spcfile
 
 
@@ -530,10 +526,9 @@ class NodeMap:
                 or one or more nodes at a time if group "t" or "st".
             The grid ('static' data) only needs to be uploaded once.
 
-            Groups "t" and "st" use pandas to extract the transpose of data table information.
+            Groups "t" and "st" use pandas to extract the 'transpose' of data table information.
 
-            upload_to_cache then empties (--> {}) the self.matfile1 and self.matfile2,
-            or self.spcfile for the next upload.
+            upload_to_cache then empties (--> {}) the data for the next upload.
         """
         netcdf2d = NetCDF2D(self.master_input)
 
@@ -702,12 +697,9 @@ class NodeMap:
 
 
     def upload_files(self, group="s"):
-        """
-        maybe divide into separate groups: "s", "t", "ss", "st
-        """
-        if group == "s":
+        if group == "s" or group == "ss":
             self.upload_files_s()
-        elif group == "t":
+        elif group == "t" or group == "st":
             self.upload_files_t()
 
     def upload_files_t(self):
@@ -1064,7 +1056,7 @@ def main(*args):
         nm = NodeMap()
         nm.download()  # needs parameters
 
-    print("*** finished ***")
+    #print("*** finished ***")
 
 
 if __name__ == '__main__':

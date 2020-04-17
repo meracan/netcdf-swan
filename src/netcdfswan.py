@@ -54,7 +54,8 @@
     1. Creates a node map that first searches for the Mesh folder in the path 'data_folder' and
         stores its .ele, .bot, and .node data.
 
-    2. loads .mat files in the 'results' folder for each year and month
+    2. loads .mat or .spc files from the 'results' folder for each year and month, OR
+        loads one .mat or .spc file from all year and month folders if "t" or "st" group
 
     3. uploads data to cache and cloud using s3netcdf package
 
@@ -116,7 +117,7 @@ re_y = re.compile(r"^.*_y_")
 re_upload = re.compile(r"^-?[uU](pload)?$")
 re_download = re.compile(r"^-?[dD](ownload)?$")
 re_static = re.compile(r"^-?[sS](tatic)?$")
-re_mesh = re.compile(r"^-?[mM](esh)?$") #
+re_mesh = re.compile(r"^-?[mM](esh)?$")
 re_edit = re.compile(r"^-?[eE](dit)?$")  # might not use, but we'll see
 re_year = re.compile(r"^20[0-9][0-9]$")
 re_month = re.compile(r"^(0?[1-9]|1[0-2])$")
@@ -143,18 +144,8 @@ class NodeMap:
         self.boundary_markers = None
         self.matfile1 = {}
         self.matfile2 = {}
+        self.MAT_names = []
         self.spcfile = {}
-
-        # hard coded for now:
-        self.afreqs = [
-            0.0345,0.0377,0.0413,0.0452,0.0494,0.0540,0.0591,0.0647,0.0707,0.0774,
-            0.0846,0.0926,0.1013,0.1108,0.1212,0.1326,0.1450,0.1586,0.1735,0.1898,
-            0.2076,0.2271,0.2484,0.2717,0.2973,0.3252,0.3557,0.3891,0.4256,0.4656,
-            0.5093,0.5571,0.6094,0.6666
-        ]
-        self.dirs = [265.0-10*i for i in range(36)]
-        self.num_afreqs = len(self.afreqs)  # 34
-        self.num_dirs = len(self.dirs)  # 36
 
         self.elements = None
         self.timesteps = []
@@ -164,28 +155,41 @@ class NodeMap:
         self.bathymetry = []
 
         with open("../jsons/variable_names.json") as vnames:
-            self.temp_var_names = json.load(vnames)
+            self.var_names = json.load(vnames)
         with open("../jsons/read_master.json") as rt:
             self.read_template = json.load(rt)
         with open("../jsons/input_master.json") as im:
             self.master_input = json.load(im)
+
             self.mesh_folder = self.master_input["file paths"]["mesh folder"]
             self.data_folder = self.master_input["file paths"]["data folder"]
-            self.file_checklist = sorted(self.master_input["file paths"]["file checklist"]) # needed?
-
+            self.file_checklist = sorted(self.master_input["file paths"]["file checklist"])
             self.start_year = self.master_input["start year"]
             self.start_month = self.master_input["start month"]
+            self.chunk_size = self.master_input["chunk size"]
+            self.afreqs = self.master_input["absolute frequencies"]
+            self.dirs = self.master_input["directions"]
+            self.num_afreqs = len(self.afreqs)
+            self.num_dirs = len(self.dirs)
+
+        # for "t" group
+        self.curr_variable = ""
+        self.chunk_index = 0
+        self.curr_nodes1 = np.zeros(shape=(self.chunk_size, 130000))
+        self.curr_nodes2 = np.zeros(shape=(self.chunk_size, 130000))
 
         # below could be optional if this class is used more generally/universally
         self.load_mesh()
         self.load_spc_nodes()
-        self.load_timesteps()  # TODO: if interruption, read from s3 first.
+        self.load_timesteps()
         self.create_nca_input()  # timesteps can go in here now that all of them are 'loaded'
-        # self.upload_to_cache("grid")
+        self.upload_to_cache("grid")
 
 
     def load_mesh(self):
-        # For the swan methods below, "-1" turns MATLAB's 1 indexing into Python's 0 indexing
+        """
+            For the swan methods below, "-1" turns MATLAB's 1 indexing into Python's 0 indexing
+        """
         def swan_noderead(nodefile):
             with open(nodefile, 'r') as f:
                 V = np.loadtxt(f)
@@ -227,7 +231,9 @@ class NodeMap:
 
     def load_spc_nodes(self):
         """
-            scan through ALL spc files first, just to get spectra nodes
+            scans through ALL spc files first, just to get spectra nodes.
+            assumes node coordinates haven't changed in the span of ~15 years,
+             so the first year and month 'results' folder is used as the default.
         """
         spc_lons = []
         spc_lats = []
@@ -249,21 +255,7 @@ class NodeMap:
                         snodes.append((lonlat[0], lonlat[1]))
             s.close()
 
-        # get the first year and month in the entire dataset
-        year = sorted([
-            y for y in os.listdir(self.data_folder)
-            if y != "Mesh"
-               and not y.startswith('.') \
-               and os.path.isdir(self.data_folder + "/" + y)
-        ])[0]
-        month = sorted([
-            m for m in os.listdir(self.data_folder + "/" + year)
-            if not m.startswith('.') \
-               and os.path.isdir(self.data_folder + "/" + year + "/")
-        ])[0]
-
-        # results = os.path.join(self.data_folder, year, month, "results") # <---- change back to this for actual run
-        results = os.path.join(self.data_folder, "2004", "01", "results")
+        results = os.path.join(self.data_folder, self.start_year, self.start_month, "results")
 
         files = sorted([name for name in os.listdir(results)])
         for filename in files:

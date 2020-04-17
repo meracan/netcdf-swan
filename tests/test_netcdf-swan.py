@@ -9,6 +9,7 @@
 """
 
 import sys, os, time
+import copy
 import json
 import re
 import datetime
@@ -53,15 +54,21 @@ def test_delete_cache():
     try:
         netcdf2d_read = NetCDF2D(input_read)
         netcdf2d_read.cache.delete()
-        print("cache deleted")
+        print("testing: cache deleted")
     except:
-        print("couldn't delete cache")
+        print("testing: couldn't delete cache")
 
     try:
-        os.remove("../src/startdate.txt")
-        print("startdate.txt deleted")
+        os.remove("../src/start_date.txt")
+        print("testing: start_date.txt deleted")
     except:
-        print("cannot find startdate.txt")
+        print("testing: cannot find start_date.txt")
+
+    try:
+        os.remove("../src/start_file.txt")
+        print("testing: start_file.txt deleted")
+    except:
+        print("testing: cannot find start_file.txt")
 
 
 
@@ -356,13 +363,24 @@ def test_upload_to_cache_transp():
 
 
 
-def test_netcdf2d_t():
-    nm = NodeMap()
-    nm.upload_files("t")
+
 
 def test_netcdf2d_s():
     nm = NodeMap()
     nm.upload_files("s")
+
+def test_netcdf2d_ss():
+    nm = NodeMap()
+    nm.upload_files("ss")
+
+def test_netcdf2d_t():
+    nm = NodeMap()
+    nm.upload_files("t")
+
+def test_netcdf2d_st():
+    nm = NodeMap()
+    nm.upload_files("st")
+
 
 
 
@@ -688,6 +706,7 @@ def test_transp(matfile):
 
 
 
+
 def test_compare_values(matfile, var1, var2=""):
 
 
@@ -763,6 +782,75 @@ def test_compare_values(matfile, var1, var2=""):
 
 
 
+def create_matfiles():
+    #filepath = "../BCSWANv5/2004/01/results/HS_B.mat"
+    filepath = None
+    matfile = loadmat(filepath)
+
+    num_timesteps = 3+7  # 3 headers + 1 week
+    years = [
+        "2005", "2006", "2007",
+        "2008", "2009", "2010", "2011",
+        "2012", "2013", "2014", "2015",
+        "2016", "2017", "2018"
+    ]
+
+    years = ["2004"]
+    months = [
+        "01", "02", "03", "04",
+        "05", "06", "07", "08",
+        "09", "10", "11", "12"
+    ]
+
+    for year in years:
+        for month in months:
+            new_matfile = copy.deepcopy(matfile)
+            keys = [k for k in new_matfile.keys()]
+            for k in keys:
+                if k[:4] == "Hsig":
+                    new_matfile[k[:5]+year+month+k[11:]] = new_matfile.pop(k)
+
+            # deleting times, to get accuracy
+            del_keys = [k for k in new_matfile.keys()]
+
+            # months with only 30 days
+            if month in ["04", "06", "09", "11"]:
+                for k in del_keys:
+                    if k[11:13] == "31":
+                        _ = new_matfile.pop(k)
+
+            # february, including leap years
+            if month == "02":
+                for k in del_keys:
+                    if k[11:12] == "3":
+                        _ = new_matfile.pop(k)
+                if year not in ["2004", "2008", "2012", "2016"]:
+                    for k in del_keys:
+                        if k[11:13] == "29":
+                            _ = new_matfile.pop(k)
+
+            # deleting times again, to save space
+            del_keys = [k for k in new_matfile.keys()]
+
+            for i, k in enumerate(del_keys):
+                if i >= num_timesteps:
+                    _ = new_matfile.pop(k)
+
+            save_path = "../BCSWANv5/" + year + "/" + month + "/results/HS.mat"
+            print(save_path)
+            #for k in new_matfile.keys():
+            #    print(k)
+
+            # savemat(save_path, new_matfile)
+        print()
+
+
+
+
+
+
+
+
 
 
 
@@ -799,12 +887,18 @@ if __name__ == "__main__":
     #test_netcdf2d_s()
     #test_netcdf2d_read_completed_cache()
 
+
     # ---------------------------
     #test_delete_cache()
     #test_netcdf2d_t()
     #test_netcdf2d_read_completed_cache()
 
 
+
+
+
+
+    #create_matfiles()
 
     #test_transp("HS.mat")
 
@@ -843,4 +937,4 @@ if __name__ == "__main__":
     #----------
     #test_HS_large()
 
-    print("*** finished testing")
+    print("testing: finished")

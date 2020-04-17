@@ -51,31 +51,31 @@
     "units": "s", 
     "standard name": "mean absolute wave period", 
     "long name": "mean absolute wave period (in s)",
-    "matfile name": ""
+    "matfile name": "TMM10"
   },
   "tm01": {
     "units": "s", 
     "standard name": "mean absolute wave period", 
     "long name": "mean absolute wave period (in s)",
-    "matfile name": ""
+    "matfile name": "TM01"
   },
   "tm02": {
     "units": "s", 
     "standard name": "mean absolute zero-crossing period", 
     "long name": "mean absolute zero-crossing period (in s)",
-    "matfile name": ""
+    "matfile name": "TM02"
   },
   "pdir": {
     "units": "degrees", 
     "standard name": "peak wave direction", 
     "long name": "peak wave direction in degrees",
-    "matfile name": ""
+    "matfile name": "PDIR"
   },
   "dir": {
     "units": "", 
     "standard name": "mean wave direction", 
     "long name": "mean wave direction (Cartesian or Nautical convention)",
-    "matfile name": ""
+    "matfile name": "DIR"
   },
   "dspr": {
     "units": "degrees", 
@@ -89,10 +89,16 @@
     "long name": "peakedness of the wave spectrum (dimensionless)",
     "matfile name": "QP"
   },
-  "transp": {
+  "transpx": {
     "units": "m3/s", 
-    "standard name": "transport of energy", 
-    "long name": "transport of energy (in W/m or m3/s)",
-    "matfile name": ""
+    "standard name": "x transport of energy",
+    "long name": "x transport of energy (in W/m or m3/s)",
+    "matfile name": "TRANSPX"
+  },
+  "transpy": {
+    "units": "m3/s",
+    "standard name": "y transport of energy",
+    "long name": "y transport of energy (in W/m or m3/s)",
+    "matfile name": "TRANSPY"
   }
 }

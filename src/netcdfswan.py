@@ -271,16 +271,15 @@ class NodeMap:
 
     def load_timesteps(self):
         """
-            (tentative solution: eventually can check start dates from the s3 bucket itself.
-            self.start_year and self.start_month are initially from the input_master.json,
-            timesteps are always from beginning of earliest data folder even after startdate.txt is updated.
-            After load_timesteps, self.start_year and self.start_month may be updated
+            timesteps are always from beginning of earliest data folder even after start_date.txt is updated.
         """
+
         datenum = date2num(
             datetime(int(self.start_year), int(self.start_month), 1),
             units="hours since 1970-01-01 00:00:00.0",
             calendar="gregorian"
         )
+
         self.timesteps = [
             num2date(
                 datenum + t,
@@ -289,15 +288,6 @@ class NodeMap:
             )
             for t in range(130000)  # ~15+ years
         ]
-        startdatepath = "../src/startdate.txt"
-        if os.path.exists(startdatepath):
-            with open("../src/startdate.txt", "r") as sd:
-                self.start_date = sd.readline()
-                self.start_year = self.start_date[:4]
-                self.start_month = self.start_date[5:7]
-                print(f"read startdate.txt: |{self.start_date}|, year: {self.start_year}, month: {self.start_month}")
-        else:
-            print(f"no file called \'{startdatepath}\'")
 
         self.num_timesteps = len(self.timesteps)
 
@@ -383,8 +373,6 @@ class NodeMap:
         master_input["nca"]["groups"] = groups
 
         self.master_input = master_input
-
-
 
     # =====================================
     def load_mat(self, filepath, mfile):
@@ -781,45 +769,42 @@ class NodeMap:
         determine starting month folder
         for each year:
             for each month:
+                write latest timestep to 'start_date.txt'
                 for each .mat (and .spc) file:
                     load .mat file and first timestep into the Node Map (e.g. HS.mat, line_n.spc)
                     use s3-netcdf package to partition the data and store in the cache
-                write latest timestep to 'startdate.txt'
 
-
-        both mat and spc files will be in the folder, but the mat files are 'prioritized'...
-            if spc files are read first, will have timesteps but the number of nodes will be completely different and
-            not part of the template
         """
         #start_ = time.time()
 
         data_folder = self.data_folder
-        search_year = self.start_year == ""
-        search_month = self.start_month == ""
-        reloading = search_year != ""
 
-        #if reloading:
-        #    self.upload_to_cache("grid", "s") # only need to do this once anyway?
+        # read date that was stored in start_date.txt, if after run was interrupted
+        with open("../src/start_date.txt", 'a+') as sd:
+            sd.seek(0)
+            start_date = sd.readline().strip()
+            start_year = start_date[:4]
+            start_month = start_date[5:7]
 
-        print("BCSWANv5")
+        found_year = (self.start_year == start_year) or (start_year == "")
+        found_month = (self.start_month == start_month) or (start_month == "")
+
         for year in sorted(os.listdir(data_folder)):
             if year != 'Mesh' and not year.startswith('.') and os.path.isdir(data_folder + "/" + year):  # avoid '.DS_Store' file
-                # print("|--", year)
-                if not search_year:  # skip through until year is found
-                    if year != str(self.start_year):
-                        #print(f"ERROR year: |{year}| {type(year)}, |{self.start_year}|, {type(self.start_year)}")
-                        continue
-                    else: search_year = True
+                #print("|--", year)
+                if not found_year:  # skip through until year is found
+                    if year != str(start_year): continue
+                    else: found_year = True
+
                 for month in sorted(os.listdir(data_folder + "/" + year)):
                     if not month.startswith('.') and os.path.isdir(data_folder + "/" + year + "/" + month):
-                        # print("    |--", month)
-                        if not search_month:  # skip through until month is found
-                            if str(int(month)) != str(self.start_month):
-                                continue
-                            else: search_month = True
+                        #print("    |--", month)
+                        if not found_month:  # skip through until month is found
+                            if month != str(start_month): continue
+                            else: found_month = True
 
                         start_date = datetime(int(year), int(month), 1)
-                        with open("../src/startdate.txt", "w+") as sd:
+                        with open("../src/start_date.txt", "w+") as sd:
                             sd.seek(0)
                             sd.write(str(start_date))
                             sd.truncate()
@@ -829,28 +814,25 @@ class NodeMap:
                         # e.g. ['HS.mat'] or ['HS.mat', 'WIND.mat', ... ]
                         for filename in files:
 
-                            if re.match(re_mat, filename) or re.match(re_mat_test, filename):
-                                # start = time.time()
-                                # print("        |--", filename)
+                            if re.match(re_mat, filename):
+                                start = time.time()
+
                                 mfilepath = os.path.join(data_folder, year, month, "results", filename)
                                 self.load_mat(mfilepath, filename)  # updates self.start_date and current mat files
+                                self.upload_to_cache("s")  # write matfile data to NetCDF2D object
 
-                                # endloadmat = time.time()
-                                # print("            |-- load_mat time:", endloadmat - start)
-                                self.upload_to_cache("mat")  # write matfile data to NetCDF2D object
+                                endloadmat = time.time()
+                                #print("            |--", filename, "upload time:", endloadmat - start)
 
-                                # endupload = time.time()
-                                # print("            `-- upload_to_cache time:", endupload - endloadmat)
+                            elif re.match(re_spc, filename):  # .spc should put into separate method
+                                start = time.time()
 
-                            elif re.match(re_spc, filename):  # .spc
-                                # start = time.time()
-                                # print("        |--", filename)
                                 sfilepath = os.path.join(data_folder, year, month, "results", filename)
                                 self.load_spc(sfilepath, filename) # new spc file updates self.start_date
+                                self.upload_to_cache("ss")
 
-                                # endloadspc = time.time()
-                                # print("            |-- load_spc time:", endloadspc - start)
-                                self.upload_to_cache("spc")
+                                endloadspc = time.time()
+                                #print("            |--", filename, "upload time:", endloadspc - start)
 
         #_end = time.time()
         #print("Total time:", _end-start_)

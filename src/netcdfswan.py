@@ -575,7 +575,7 @@ class NodeMap:
         self.spcfile = spcfile
 
 
-    def upload_to_cache(self, filetype, group="s"):
+    def upload_to_cache(self, group_type="s"):
         """
             Writing to NetCDF2D:
             A NetCDF2D object is created with the finished template and the contents from the node map
@@ -589,10 +589,10 @@ class NodeMap:
         """
         netcdf2d = NetCDF2D(self.master_input)
 
-        if filetype == "grid":
-            print("uploading grid data to cache...")
 
-            # --------------------------- grid
+        if group_type == "grid":
+            #print("uploading grid data to cache...")
+
             timesteps = np.array([
                 date2num(self.timesteps[t], units="hours since 1970-01-01 00:00:00.0", calendar="gregorian")
                 for t in range(self.num_timesteps)
@@ -605,151 +605,84 @@ class NodeMap:
             netcdf2d.nca.variables["afreq"][:] = self.afreqs
             netcdf2d.nca.variables["dir"][:] = self.dirs
 
-        elif filetype == "mat":
-            # need to find from variable names. TODO: improve
-            MAT_val1, MAT_val2 = "", ""
+
+        elif group_type == "s":
+            MAT1, MAT2 = "", ""
             variable1, variable2 = "", ""
-            MAT_val1 = list(self.matfile1.keys())[0]
+            MAT1 = list(self.matfile1.keys())[0]
             if self.matfile2:
-                MAT_val2 = list(self.matfile2.keys())[0]
-            for kvar, val in self.temp_var_names.items():
-                if val["matfile name"] == MAT_val1:
+                MAT2 = list(self.matfile2.keys())[0]
+            for kvar, val in self.var_names.items():
+                if val["matfile name"] == MAT1:
                     variable1 = kvar
-                if val["matfile name"] == MAT_val2 and MAT_val2 != "":
+                if val["matfile name"] == MAT2 and MAT2 != "":
                     variable2 = kvar
 
-            if group == "t":
-                m1start = time.time()
-
-                # --------------------------- group t, matfile 1
-                mf1pd = pd.DataFrame.from_dict(self.matfile1[MAT_val1])
-                transpose = np.array(mf1pd.iloc[0:self.num_nodes])
-                timedates = [
-                    datetime(int(k[-15:][:4]), int(k[-15:][4:6]), int(k[-15:][6:8]), int(k[-15:][9:11]))
-                    for k in mf1pd.columns
-                ]
-                tds = [self.timesteps.index(t) for t in timedates]
-                num_nodes_chunk = 10000
-                for node in range(num_nodes_chunk):
-                    netcdf2d["t", "hs", node, tds] = transpose[node][:]
-
-                """
-                num_chunks = 1 # 15 # done in chunks to prevent RAM spike. 15 * 11863 = 177945
-                chunk_size = 1000
-                for chunk in range(num_chunks):
-                    nodes = [
-                        n for n in range(chunk*chunk_size, (chunk+1)*chunk_size) if n < self.num_nodes
-                    ]
-                    netcdf2d["t", "hs", nodes, tds] = transpose[nodes][:]
-                """
-
-                m1end = time.time()
-                print()
-                print("            `-- m1 upload time:", m1end - m1start)
-
-                if self.matfile2:
-                    m2start = time.time()
-
-                    # --------------------------- group t, matfile 2
-                    mf2pd = pd.DataFrame.from_dict(self.matfile2[MAT_val2])
-                    transpose = np.array(mf2pd.iloc[0:self.num_nodes])
-                    timedates = [
-                        datetime(int(k[-15:][:4]), int(k[-15:][4:6]), int(k[-15:][6:8]), int(k[-15:][9:11]))
-                        for k in mf2pd.columns
-                    ]
-                    tds = [self.timesteps.index(t) for t in timedates]
-                    num_nodes_chunk = 10000
-                    for node in range(num_nodes_chunk):
-                        netcdf2d["t", "hs", node, tds] = transpose[node][:]
-                    """
-                    num_chunks = 1 # 15  # done in chunks to prevent RAM spike. 15 * 11863 = 177945
-                    chunk_size = 1000
-                    for chunk in range(num_chunks):
-                        nodes = [
-                            n for n in range(chunk * chunk_size, (chunk + 1) * chunk_size) if n < self.num_nodes
-                        ]
-                        netcdf2d["t", "hs", nodes, tds] = transpose[nodes][:]
-                    """
+            for kv, n in self.matfile1[MAT1].items():
+                ts = kv[-15:]
+                date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
+                try:
+                    t_index = self.timesteps.index(date)
+                    netcdf2d["s", variable1, t_index] = n
+                except ValueError as ve:
+                    pass
+                    print(ve)
 
 
-                    m2end = time.time()
-                    print("            `-- m2 upload time:", m2end - m1end)
-
-            elif group == "s":
-                m1start = time.time()
-
-                # --------------------------- group s, matfile 1
-                for kv, n in self.matfile1[MAT_val1].items():
+            if self.matfile2:
+                for kv, n in self.matfile2[MAT2].items():
                     ts = kv[-15:]
                     date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
                     t_index = self.timesteps.index(date)
                     try:
-                        netcdf2d["s", variable1, t_index] = n
+                        netcdf2d["s", variable2, t_index] = n
                     except ValueError:
                         raise
-
-
-                m1end = time.time()
-                print("            `-- m1 upload time:", m1end - m1start)
-
-                if self.matfile2:
-                    m2start = time.time()
-
-                    # --------------------------- group s, matfile 2
-                    for kv, n in self.matfile2[MAT_val2].items():
-                        ts = kv[-15:]
-                        date = datetime(int(ts[:4]), int(ts[4:6]), int(ts[6:8]), int(ts[9:11]))
-                        t_index = self.timesteps.index(date)
-                        try:
-                            netcdf2d["s", variable2, t_index] = n
-                        except ValueError:
-                            raise
-
-
-                    m2end = time.time()
-                    print("            `-- m2 upload time:", m2end - m1end)
 
             # erase for the next .mat file in the current month folder
             self.matfile1 = {}
             self.matfile2 = {}
 
-        elif filetype == "spc":
 
-            if group == "st":
-                s_start = time.time()
+        elif group_type == "t":
+            MAT1, MAT2 = self.MAT_names[0], ""
+            if len(self.MAT_names) == 2:
+                MAT2 = self.MAT_names[1]
+            variable1, variable2 = "", ""
+            for kvar, val in self.var_names.items():
+                if val["matfile name"] == MAT1:
+                    variable1 = kvar
+                if val["matfile name"] == MAT2 and MAT2 != "":
+                    variable2 = kvar
 
-                # --------------------------- group st
-                # TODO
-                #spc_pd = pd.DataFrame.from_dict(self.spcfile)
-                #transpose = np.array(spc_pd.iloc[0:self.num_nodes])
-                #timedates = [
-                #    datetime(int(k[-15:][:4]), int(k[-15:][4:6]), int(k[-15:][6:8]), int(k[-15:][9:11]))
-                #    for k in mf1pd.columns
-                #]
-                #tds = [self.timesteps.index(t) for t in timedates]
-                #for i in range(1000):
-                #    netcdf2d["st", "spectra", i, tds] = transpose[i][:]
+            node_start, node_end = self.chunk_index, self.chunk_index + self.chunk_size
+            netcdf2d["t", variable1, node_start:node_end, :] = self.curr_nodes1[:][:]
 
-                s_end = time.time()
-                print("            `-- snode time:", s_end - s_start)
+            if len(self.MAT_names) == 2:
+                node_start, node_end = self.chunk_index, self.chunk_index + self.chunk_size
+                netcdf2d["t", variable2, node_start:node_end, :] = self.curr_nodes2[:][:]
 
-            elif group == "ss":
-                s_start = time.time()
-
-                # --------------------------- group ss
-                for date, snodes in self.spcfile.items():
-                    t_index = self.timesteps.index(date)
-                    for snode, afreqs in snodes.items():  # snode will have an index
-                        sn = self.snodes.index((snode[0], snode[1]))
-                        netcdf2d["ss", "spectra", t_index, sn] = afreqs
+            # erase for the next chunk of nodes
+            self.MAT_names = []
+            self.curr_nodes1 = np.zeros(shape=(self.chunk_size, 130000))
+            self.curr_nodes2 = np.zeros(shape=(self.chunk_size, 130000))
 
 
-                s_end = time.time()
-                print("            `-- snode time:", s_end-s_start)
+
+        elif group_type == "ss":
+            for date, snodes in self.spcfile.items():
+                t_index = self.timesteps.index(date)
+                for snode, afreqs in snodes.items():  # snode will have an index
+                    sn = self.snodes.index((snode[0], snode[1]))
+                    netcdf2d["ss", "spectra", t_index, sn] = afreqs
 
             # erase for the next .spc file in the current month folder
             self.spcfile = {}
 
+
+        elif group_type == "st":
+            # TODO
+            pass
 
 
 

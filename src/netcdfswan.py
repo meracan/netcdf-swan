@@ -375,6 +375,75 @@ class NodeMap:
         self.master_input = master_input
 
     # =====================================
+
+    def load_mat_partial(self, filepath, mfile):
+        """
+            Reads a fraction ("chunk") of node information from the .mat file,
+            starting from the node at self.chunk_index.
+            Data is stored in self.curr_nodes instead of self.matfile.
+        """
+        mname = re.match(re_mat, mfile).groups()[0]
+        timestep_keys = []
+        # mname:    "HS"
+        # mfile:    "HS.mat"
+        # filepath: "../BCSWANv5/2004/01/results/HS.mat"
+
+        matfile_dict = {}
+        matfile_dictx = {}
+        matfile_dicty = {}
+
+        matfile = loadmat(filepath)
+        matfile.pop('__header__')
+        matfile.pop('__version__')
+        matfile.pop('__globals__')
+
+        for k, v in matfile.items():
+            v_sq = np.squeeze(v)
+            if re.match(re_x, k):
+                matfile_dictx.update({k: v_sq})
+            elif re.match(re_y, k):
+                matfile_dicty.update({k: v_sq})
+            else:
+                matfile_dict.update({k: v_sq})
+
+        if len(matfile_dict) == 0:
+            mf1pd = pd.DataFrame.from_dict(matfile_dictx)
+            mf2pd = pd.DataFrame.from_dict(matfile_dicty)
+            transpose1 = np.array(mf1pd.iloc[ self.chunk_index : self.chunk_index + self.chunk_size ])
+            transpose2 = np.array(mf2pd.iloc[ self.chunk_index : self.chunk_index + self.chunk_size ])
+            try:
+                tds = [
+                    self.timesteps.index(t) for t in [
+                        datetime(int(k[-15:][:4]), int(k[-15:][4:6]), int(k[-15:][6:8]), int(k[-15:][9:11]))
+                        for k in mf1pd.columns
+                    ]
+                ]
+                for i in range(self.chunk_index, self.chunk_index + self.chunk_size):
+                    self.curr_nodes1[i][tds] = transpose1[i][:]
+                    self.curr_nodes2[i][tds] = transpose2[i][:]
+            except ValueError:
+                pass
+
+            self.MAT_names = [mname+"X", mname+"Y"]
+
+        else:
+            mf1pd = pd.DataFrame.from_dict(matfile_dict)
+            transpose = np.array(mf1pd.iloc[self.chunk_index : self.chunk_index + self.chunk_size])
+            try:
+                tds = [
+                    self.timesteps.index(t) for t in [
+                        datetime(int(k[-15:][:4]), int(k[-15:][4:6]), int(k[-15:][6:8]), int(k[-15:][9:11]))
+                        for k in mf1pd.columns
+                    ]
+                ]
+                for i in range(self.chunk_index, self.chunk_index + self.chunk_size):
+                    self.curr_nodes1[i][tds] = transpose[i][:]
+            except ValueError:
+                pass
+
+            self.MAT_names = [mname]
+
+
     def load_mat(self, filepath, mfile):
         """
             'filepath' and 'mfile' could be merged into one?
@@ -693,73 +762,79 @@ class NodeMap:
     def upload_files_t(self):
         """
         Scans through all years and months for 1 of the results files (e.g. HS.mat) from a checklist.
-        Pops from checklist when that variable is finished.
+        Pops from the checklist when that variable is finished.
 
         - Pseudocode -
 
-        for each variable:
-            for each year:
-                for each month:
-                    for each file in the results folder:
-                        if .mat file:
-                            load_mat( .mat )
-                            upload_to_cache("mat", "s")
-                        else if .spc file:
-                            load_spc( .spc )
-                            upload_to_cache("spc", "s")
+        get starting variable, if specified
+        for each variable ("curr_file") in checklist:
+            save current variable in text file in case run is interrupted
+            for each chunk of nodes:
+                for each year:
+                    for each month:
+                        for each file in the results folder:
+                            if .mat file:
+                                load_mat_partial( .mat )
+                            else if .spc file:
+                                load_spc_partial( .spc )
+                if curr_file is .mat:
+                    upload_to_cache("t")
+                else if curr_file is .spc:
+                    upload_to_cache("st")
+                ready index for next chunk of nodes
+            pop variable from checklist
         """
 
-        # TODO: initialize checklist, in case of signal interruption
-        """
-        with open("../src/checklist.txt", 'w+') as f:
-            mat_checklist = f.read().splitlines()
-        permanent_checklist = mat_checklist
-        """
+        # read file name that was stored in start_file.txt, if after run was interrupted
+        with open("../src/start_file.txt", 'a+') as start_file:
+            start_file.seek(0)
+            current_file = start_file.readline().strip()
 
-        print("BCSWANv5 (transpose)")
-        self.upload_to_cache("grid")  # what happens when we dont do this?
+        num_chunks = int(self.num_nodes/self.chunk_size)
 
-        search_files = True
-        while search_files:
-            print("\nsearching for", self.file_checklist[0])
-            for year in sorted(os.listdir(self.data_folder)):
-                if year != 'Mesh' and not year.startswith('.') and os.path.isdir(self.data_folder + "/" + year):  # avoid '.DS_Store' file
-                    print("|--", year)
-                    for month in sorted(os.listdir(self.data_folder + "/" + year)):
-                        if not month.startswith('.') and os.path.isdir(self.data_folder + "/" + year + "/" + month):
-                            print("    |--", month)
-                            results = os.path.join(self.data_folder, year, month, "results")
-                            current_file = self.file_checklist[0]
-                            if current_file in [name for name in os.listdir(results)]:
-                                if re.match(re_mat, current_file) or re.match(re_mat_test, current_file):
-                                    start = time.time()
-                                    print("        |--", current_file)
+        last_file = ""
+        while len(self.file_checklist) > 0:
+            if not current_file:
+                current_file = self.file_checklist[0]
+            else:
+                if current_file != last_file:
+                    while current_file != self.file_checklist[0]:
+                        last_file = self.file_checklist.pop(0)
+                else:
+                    current_file = self.file_checklist[0]
 
-                                    mfilepath = os.path.join(self.data_folder, year, month, "results", current_file)
-                                    self.load_mat(mfilepath, current_file)
+            with open("../src/start_file.txt", 'w+') as start_file:
+                start_file.seek(0)
+                start_file.write(current_file)
 
-                                    endloadmat = time.time()
-                                    print("            |-- load_mat time:", endloadmat - start)
+            #print("\nsearching for", current_file)
+            search_file_start = time.time()
+            for chunk in range(num_chunks):
+                for year in sorted(os.listdir(self.data_folder)):
+                    if year != 'Mesh' and not year.startswith('.') and os.path.isdir(self.data_folder + "/" + year):  # avoid '.DS_Store' file
+                        #print("|--", year)
+                        for month in sorted(os.listdir(self.data_folder + "/" + year)):
+                            if not month.startswith('.') and os.path.isdir(self.data_folder + "/" + year + "/" + month):
+                                #print("    |--", month)
+                                results = os.path.join(self.data_folder, year, month, "results")
+                                if current_file in [name for name in os.listdir(results)]:
+                                    filepath = os.path.join(results, current_file)
 
-                                    self.upload_to_cache("mat", "t")
+                                    if re.match(re_mat, current_file):
+                                        self.load_mat_partial(filepath, current_file)
+                                    elif re.match(re_spc, current_file):
+                                        #self.load_spc_partial(filepath, current_file)  # TODO
+                                        pass
+                if re.match(re_mat, current_file):
+                    self.upload_to_cache("t")
+                elif re.match(re_spc, current_file):
+                    self.upload_to_cache("st")  # TODO
 
-                                elif re.match(re_spc, current_file):  # .spc should put into separate method
-                                    start = time.time()
-                                    print("        |--", current_file)
+                self.chunk_index += self.chunk_size
 
-                                    sfilepath = os.path.join(self.data_folder, year, month, "results", current_file)
-                                    #self.load_spc(sfilepath, current_file)  #
+            last_file = self.file_checklist.pop(0)
 
-                                    endloadspc = time.time()
-                                    print("            |-- load_spc time:", endloadspc - start)
-
-                                    #self.upload_to_cache("spc")
-
-            self.file_checklist.pop(0)
-
-            if len(self.file_checklist) == 0:
-                search_files = False  # all done
-
+            #print("num nodes:", len(self.curr_nodes1), " time taken:", time.time() - search_file_start)
 
 
     def upload_files_s(self):

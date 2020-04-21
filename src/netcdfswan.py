@@ -645,15 +645,16 @@ class NodeMap:
 
 
         elif group_type == "t":
-            MAT1, MAT2 = self.MAT_names[0], ""
-            if len(self.MAT_names) == 2:
-                MAT2 = self.MAT_names[1]
-            variable1, variable2 = "", ""
-            for kvar, val in self.var_names.items():
-                if val["matfile name"] == MAT1:
-                    variable1 = kvar
-                if val["matfile name"] == MAT2 and MAT2 != "":
-                    variable2 = kvar
+            if len(self.MAT_names) > 0:
+                MAT1, MAT2 = self.MAT_names[0], ""
+                if len(self.MAT_names) == 2:
+                    MAT2 = self.MAT_names[1]
+                variable1, variable2 = "", ""
+                for kvar, val in self.var_names.items():
+                    if val["matfile name"] == MAT1:
+                        variable1 = kvar
+                    if val["matfile name"] == MAT2 and MAT2 != "":
+                        variable2 = kvar
 
             node_start, node_end = self.chunk_index, self.chunk_index + self.chunk_size
             netcdf2d["t", variable1, node_start:node_end, :] = self.curr_nodes1[:][:]
@@ -765,6 +766,8 @@ class NodeMap:
 
                 self.chunk_index += self.chunk_size
 
+            # reset
+            self.chunk_index = 0
             last_file = self.file_checklist.pop(0)
 
             #print("num nodes:", len(self.curr_nodes1), " time taken:", time.time() - search_file_start)

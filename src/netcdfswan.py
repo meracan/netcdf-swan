@@ -77,11 +77,10 @@ class NetCDFSWAN(NetCDF2D):
     logger:logging.getLogger()
       Log basic printout to log file
   """
-  def __init__(self,swanFolder,obj,logger=None):
+  def __init__(self,obj,logger=None):
     super().__init__(obj)
     
-    if not os.path.exists(swanFolder):raise Exception("Folder does not exist")
-    self.swanFolder =  swanFolder
+    self.swanFolder = swanFolder = obj.get("swanFolder")
     self.logger     = logger
     
     # Initialize some of the info from nca to self.
@@ -143,6 +142,7 @@ class NetCDFSWAN(NetCDF2D):
         This merge a few json together and extract certain info into metadata.
     """
     obj=NetCDFSWAN.load(file)
+    obj['swanFolder']=swanFolder
     jsonFolder=os.path.dirname(file)
     
     # Load and merge json files BCWABv5.variables.json/BCWABv5.specvariables.json

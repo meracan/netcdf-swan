@@ -65,7 +65,7 @@ Swan results has stored...
 
 
 ## Doc and development
-[Docs](test/README.md)
+[Docs](doc/README.md)
 
 ## AWS S3 Credentials
 Credentials (for example), `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION` needs to be save in environment variables. 

@@ -12,7 +12,8 @@ setup(
     install_requires=[
         'scipy',
         'numpy',
-        #'netcdf4',
+        'netcdf4',
+        'tqdm'
     ],
     python_requires='>=3.6',
 )

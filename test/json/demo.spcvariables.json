@@ -1,0 +1,10 @@
+{
+  "spectra": {
+    "type":"f8",
+    "units": "m2/Hz/degr",
+    "standard name": "VaDens",
+    "long name": "variance densities in m2/Hz/degr",
+    "exception_value":-0.9900E+02,
+    "matfile name": "spectra"
+	}
+}

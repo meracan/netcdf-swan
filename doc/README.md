@@ -1,0 +1,282 @@
+# UVIC-BCSWAN API Documentation
+## Methodology
+
+For each file in the SWAN dataset, NetCDFSWAN will store the file's contents, 
+then create a NetCDF2D object to automatically partition the NodeMap data into one .nca file and multiple .nc files, 
+which are stored in a local cache, beside the SWAN dataset. 
+The NetCDF2D object then acts as a 'vehicle' to transport the cache contents to and from the Amazon S3 bucket:
+
+```                                                                     
+                                                                ┐       ┌───> s3 Cloud
+                                                ┌────>  .nc     |       |
+                                                ├────>  .nc     |       |   (NetCDF2D)
+                                                ├────>  .nc     |       |    
+.mat / .spc  ────> NetCDFSWAN ───>  NetCDF2D ───┤               ├───────┘ 
+                                                |               |
+                                                └────>  .nca    |
+                                                                ┘
+SWAN data                                       local cache
+```
+
+For the script to work, a temporally sorted folder structure is assumed for the data, with one 'Mesh' folder plus multiple year folders. 
+Each year folder contains 12 month folders. 
+Each month folder has a 'results' folder, which contains all of the variable data, 
+in the form of Matlab (.mat) and spectra (.spc) files, that is associated with the 
+nodes and their coordinate information (the 'mesh' or 'grid'):
+
+```
+|
+├-- netcdfswan.py
+└-- SWAN_DATA
+    |
+    ├-- 2005
+    ├-- 2006
+    ├-- 2007
+    :   ├-- 01
+        ├-- 02
+        ├-- 03
+        :   └-- results
+                ├-- HS.mat
+                ├-- WIND.mat
+                ├-- line_n.spc
+                ├-- QP.mat
+                :
+
+                :
+                ├-- hotspots.spc
+                └-- TPS.mat
+        :
+        ├-- 11
+        └-- 12
+    :
+    ├-- 2016
+    ├-- 2017
+    |
+    └-- Mesh
+        ├-- .ele
+        ├-- .bot
+        └-- .node
+```
+
+The directory path for the SWAN data, as well as the start year and start month, 
+should be written in 'input_master.json' ahead of time so the script knows where to look when it runs. 
+Ideally, the script (src) should be placed beside the data folder. Other path names are also stored in this json file, 
+with the rest of the input as indicated in the s3-netcdf documentation.
+
+## NetCDFSWAN
+
+The NetCDFSWAN class acts as a sort of 'hub' or temporary storage space to hold all of the static grid and meta data 
+from a single .mat or .spc file as nc files are being created, and provides some useful methods for plotting, etc. 
+(work in progress...) 
+The grid data includes coordinate data such as timesteps, latitudes, longitudes, bathymetry, and other triangular mesh information.
+
+## Basic writing usage
+
+Simple writing usage. NetCDFSWAN needs an object with a specific format as describe in the following section.
+The function `prepareInputJSON` is a helper function to create  the object.
+
+```python
+from netcdfswan import NetCDFSWAN
+
+swanFolder='tests/data'
+jsonFile='tests/json/demo.json'
+input=NetCDFSWAN.prepareInputJSON(jsonFile,swanFolder)
+
+swan=NetCDFSWAN(input)
+
+# Upload lat,lon,elem,datetime,freq,dir
+swan.uploadStatic()
+
+# Upload variables in the "s" group
+swan.uploadS()
+
+# Upload variables in the "t" group
+swan.uploadT()
+
+# Upload variables in the "spc" group
+swan.uploadSpc()
+```
+
+## Writing usage with logger
+```python
+import logging
+
+swanFolder='tests/data'
+jsonFile='tests/json/demo.json'
+input=NetCDFSWAN.prepareInputJSON(jsonFile,swanFolder)
+
+logging.basicConfig(
+        filename=os.path.join(swanFolder,input['name'],"progress.log"),
+        level=logging.DEBUG,
+        format="%(levelname)s %(asctime)s  --| %(message)s"
+        )
+logger = logging.getLogger()
+swan=NetCDFSWAN(input,logger=logger)
+
+...
+
+```
+
+#### Input Json file
+Add text here to explain the json file
+
+```json
+{
+  "name":"SWANv5",
+  "cacheLocation":"test/output",
+  "bucket":"uvic-bcwave",
+  "localOnly":true,
+  "nca": {
+    "metadata":{
+      "title":"BCSWANv5",
+      "startDate":"2004-01-01T00:00:00",
+      "timeStep(h)":1
+    },
+    "dimensions" : {"npe":3,"nelem":348364,"nnode":177945,"nstation":27,"nsnode":198,"ntime":130000,"nfreq":34,"ndir":36},
+    "groups":{
+      "elem":{"dimensions":["nelem","npe"],"variables":{
+          "elem":{"type":"i4", "units":"" ,"standard_name":"elements" ,"long_name":"elements"}
+        }
+      },
+      "time":{"dimensions":["ntime"],"variables":{
+          "time":{"type":"f8", "units":"hours since 1970-01-01 00:00:00.0","calendar":"gregorian" ,"standard_name":"Datetime" ,"long_name":"Datetime"}
+        }
+      },
+      "nodes":{"dimensions":["nnode"],"variables":{
+          "lat":{"type":"f8", "units":"degrees_north" ,"standard_name":"latitude" ,"long_name":"latitude"},
+          "lon":{"type":"f8", "units":"degrees_east" ,"standard_name":"longitude" ,"long_name":"longitude"},
+          "b":{"type":"f4", "units":"m" ,"standard_name":"Bathymetry" ,"long_name":"Bathymetry, m (CGVD28)"}
+        }
+      },
+      "stations":{"dimensions":["nstation","nsnode"],"variables":{
+          "lat":{"type":"f8", "units":"degrees_north" ,"standard_name":"latitude" ,"long_name":"latitude"},
+          "lon":{"type":"f8", "units":"degrees_east" ,"standard_name":"longitude" ,"long_name":"longitude"}
+        }
+      },    
+      "freq":{"dimensions":["nfreq"],"variables":{
+          "freq":{"type":"f8", "units":"Hz" ,"standard_name":"absolute frequency" ,"long_name":"absolute frequencies in Hz"}
+        }
+      },
+      "dir":{"dimensions":["ndir"],"variables":{
+          "dir":{"type":"f8", "units":"degrees" ,"standard_name":"spectral nautical directions" ,"long_name":"spectral nautical directions in degr"}
+        }
+      },      
+      "s":{"dimensions":["ntime","nnode"],"variables":"BCSWANv5.variables.json"},
+      "t":{"dimensions":["nnode","ntime"],"variables":"BCSWANv5.variables.json"},
+      "spc":{"dimensions":["nstation","nsnode","ntime","nfreq", "ndir"],"variables":"BCSWANv5.specvariables.json"}
+    }
+  }
+}
+```
+#### Input Variable Json file
+Add text here to explain the json file
+```json
+{
+  "u10": {
+    "type":"f4",
+    "units": "m/s", 
+    "standard name": "u Wind velocity", 
+    "long name": "u Wind velocity, m/s",
+    "matfile name": "Windv_x"
+  },
+  "v10": {
+    "type":"f4",
+    "units": "m/s", 
+    "standard name": "v Wind velocity", 
+    "long name": "v Wind velocity, m/s",
+    "matfile name": "Windv_y"
+  },
+  "hs": {
+    "type":"f4",
+    "units": "m", 
+    "standard name": "significant wave height", 
+    "long name": "significant wave height (in s)",
+    "matfile name": "Hsig"
+  },
+  "tps": {
+    "type":"f4",
+    "units": "s", 
+    "standard name": "peak period", 
+    "long name": "smoothed peak period (in s)",
+    "matfile name": "TPsmoo"
+  },
+  "tmm10": {
+    "type":"f4",
+    "units": "s", 
+    "standard name": "mean absolute wave period", 
+    "long name": "mean absolute wave period (in s)",
+    "matfile name": "Tm_10"
+  },
+  "tm01": {
+    "type":"f4",
+    "units": "s", 
+    "standard name": "mean absolute wave period", 
+    "long name": "mean absolute wave period (in s)",
+    "matfile name": "Tm01"
+  },
+  "tm02": {
+    "type":"f4",
+    "units": "s", 
+    "standard name": "mean absolute zero-crossing period", 
+    "long name": "mean absolute zero-crossing period (in s)",
+    "matfile name": "Tm02"
+  },
+  "pdir": {
+    "type":"f4",
+    "units": "degrees", 
+    "standard name": "peak wave direction", 
+    "long name": "peak wave direction in degrees",
+    "matfile name": "Pdir"
+  },
+  "dir": {
+    "type":"f4",
+    "units": "", 
+    "standard name": "mean wave direction", 
+    "long name": "mean wave direction (Cartesian or Nautical convention)",
+    "matfile name": "Dir"
+  },
+  "dspr": {
+    "type":"f4",
+    "units": "degrees", 
+    "standard name": "directional wave spread", 
+    "long name": "directional spreading of the waves (in degrees)",
+    "matfile name": "Dspr"
+  },
+  "qp": {
+    "type":"f4",
+    "units": "", 
+    "standard name": "peakedness of wave spectrum",
+    "long name": "peakedness of the wave spectrum (dimensionless)",
+    "matfile name": "Qp"
+  },
+  "transpx": {
+    "type":"f4",
+    "units": "m3/s", 
+    "standard name": "x transport of energy",
+    "long name": "x transport of energy (in W/m or m3/s)",
+    "matfile name": "Transp_x"
+  },
+  "transpy": {
+    "type":"f4",
+    "units": "m3/s",
+    "standard name": "y transport of energy",
+    "long name": "y transport of energy (in W/m or m3/s)",
+    "matfile name": "Transp_y"
+  }
+}
+```
+
+#### Input Variable Json file
+Add text here to explain the json file
+```json
+{
+  "spectra": {
+    "type":"f8",
+    "units": "m2/Hz/degr",
+    "standard name": "VaDens",
+    "long name": "variance densities in m2/Hz/degr",
+    "exception_value":-0.9900E+02,
+    "matfile name": "spectra"
+	}
+}
+```

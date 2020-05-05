@@ -145,7 +145,7 @@ def create_data():
       
       startIndex,endIndex=getDatetimeIndex(time,dt)
       resultsFolder=create_folders(folder,year,month)
-      print(dt)
+      
       for i,s in enumerate(stations):
         station=stations[s]
         nsnodes=station['nsnodes']
@@ -166,12 +166,12 @@ def create_data():
         dic['datetime']=dt
         create_mat(filePath,dic)
         
-        
+def check_data():
+  # TODO: read matlab file,spc and make sure it's the same array
+  # np.testing.assert_array_equal(NetCDFSWAN.load('./output/2000/12/results/HS.mat',variables['HS'][['Hsig']])
+  None
         
 if __name__ == "__main__":
   create_data()
-  
-  
-  # a=NetCDFSWAN.load('./output/2000/12/results/HS.mat')
-  # print(a['Hsig'])
+  # check_data()
   

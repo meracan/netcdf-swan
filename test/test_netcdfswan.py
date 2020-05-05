@@ -57,9 +57,10 @@ def test_NetCDFSWAN():
   # # np.testing.assert_array_equal(swan["s","transpx"], variables['WIND']['Windv_x'])
   # # np.testing.assert_array_equal(swan["s","transpy"], variables['WIND']['Windv_x'])
   
-  # np.testing.assert_array_equal(swan["t","u10"], variables['WIND']['Windv_x'].T)
-  # np.testing.assert_array_equal(swan["t","v10"], variables['WIND']['Windv_y'].T)
-  # np.testing.assert_array_equal(swan["t","hs"], variables['HS']['Hsig'].T)
+  
+  np.testing.assert_array_equal(swan["t","u10"], variables['WIND']['Windv_x'].T)
+  np.testing.assert_array_equal(swan["t","v10"], variables['WIND']['Windv_y'].T)
+  np.testing.assert_array_equal(swan["t","hs"], variables['HS']['Hsig'].T)
   
   # TODO: Replace name of variables below
   # np.testing.assert_array_equal(swan["t","tps"], variables['tps'].T)
@@ -76,8 +77,6 @@ def test_NetCDFSWAN():
   
   # TODO: need to change default values in spcgroup
   # TODO: swan["spc","spectra"] does not work...I'll have to check s3-netcdf
-  # np.testing.assert_array_equal(swan["spc","spectra",0,0], spcgroup['spectra'][0,0])
-  
   
   np.testing.assert_array_equal(swan["spc","spectra",0,0], spcgroup['spectra'][0,0])
   np.testing.assert_array_equal(swan["spc","spectra",8], spcgroup['spectra'][8])

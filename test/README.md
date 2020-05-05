@@ -7,5 +7,7 @@ conda install pytest
 
 ## Testing
 ```bash
-pytest
+python createData.py
+python test_static.py
+python test_netcdfswan.py
 ```

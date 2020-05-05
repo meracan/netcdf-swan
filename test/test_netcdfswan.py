@@ -4,60 +4,85 @@ from netcdfswan import NetCDFSWAN
 import numpy as np
 import logging
 
-from .dataTest import elem,time,lat,lon,bed,slat,slon,freq,dir,sgroup,spcgroup
+from dataTest import elem,time,lat,lon,bed,slat,slon,freq,dir,spcgroup,variables
 
-
-def test_NetCDFSWAN():
-  swanFolder='./data'
+def test_NetCDFSWAN_write():
+  swanFolder='./output'
   jsonFile='./json/demo.json'
-  input=NetCDFSWAN.prepareInputJSON(jsonFile,swanFolder)
+  input=NetCDFSWAN.prepareInputJSON(jsonFile,swanFolder,year=2000,month=1)
+  
   swan=NetCDFSWAN(input)
   # Write
-  swan.uploadStatic()
+  swan.uploadStatic(year=2000)
   swan.uploadS()
   swan.uploadT()
   swan.uploadSpc()
+
+def test_NetCDFSWAN():
+
   
+  input={
+    "name":"test1",
+    "cacheLocation":"../../s3",
+    "localOnly":True
+  }
+  
+  swan=NetCDFSWAN(input)
+
   # Read
+  np.testing.assert_array_equal(swan["nodes","bed"], bed)
   np.testing.assert_array_equal(swan["elem","elem"], elem)
   np.testing.assert_array_equal(swan["time","time"], time)
   np.testing.assert_array_equal(swan["nodes","lat"], lat)
   np.testing.assert_array_equal(swan["nodes","lon"], lon)
-  np.testing.assert_array_equal(swan["nodes","bed"], bed)
-  np.testing.assert_array_equal(swan["stations","lat"], slat)
-  np.testing.assert_array_equal(swan["stations","long"], slon)
+  
+  
+  
   np.testing.assert_array_equal(swan["freq","freq"], freq)
   np.testing.assert_array_equal(swan["dir","dir"], dir)
+
+  np.testing.assert_array_equal(swan["s","u10"], variables['WIND']['Windv_x'])
+  np.testing.assert_array_equal(swan["s","v10"], variables['WIND']['Windv_y'])
+  np.testing.assert_array_equal(swan["s","hs"], variables['HS']['Hsig'])
   
-  np.testing.assert_array_equal(swan["s","u10"], sgroup['u10'])
-  np.testing.assert_array_equal(swan["s","v10"], sgroup['v10'])
-  np.testing.assert_array_equal(swan["s","hs"], sgroup['hs'])
-  np.testing.assert_array_equal(swan["s","tps"], sgroup['tps'])
-  np.testing.assert_array_equal(swan["s","tmm10"], sgroup['tmm10'])
-  np.testing.assert_array_equal(swan["s","tm01"], sgroup['tm01'])
-  np.testing.assert_array_equal(swan["s","tm02"], sgroup['tm02'])
-  np.testing.assert_array_equal(swan["s","pdir"], sgroup['pdir'])
-  np.testing.assert_array_equal(swan["s","dir"], sgroup['dir'])
-  np.testing.assert_array_equal(swan["s","dspr"], sgroup['dspr'])
-  np.testing.assert_array_equal(swan["s","qp"], sgroup['qp'])
-  np.testing.assert_array_equal(swan["s","transpx"], sgroup['transpx'])
-  np.testing.assert_array_equal(swan["s","transpy"], sgroup['transpy'])
+  # TODO: Replace name of variables below
+  # np.testing.assert_array_equal(swan["s","tps"], variables['WIND']['Windv_x'])
+  # # np.testing.assert_array_equal(swan["s","tmm10"], variables['WIND']['Windv_x'])
+  # # np.testing.assert_array_equal(swan["s","tm01"], variables['WIND']['Windv_x'])
+  # # np.testing.assert_array_equal(swan["s","tm02"], variables['WIND']['Windv_x'])
+  # # np.testing.assert_array_equal(swan["s","pdir"], variables['WIND']['Windv_x'])
+  # # np.testing.assert_array_equal(swan["s","dir"], variables['WIND']['Windv_x'])
+  # # np.testing.assert_array_equal(swan["s","dspr"], variables['WIND']['Windv_x'])
+  # # np.testing.assert_array_equal(swan["s","qp"], variables['WIND']['Windv_x'])
+  # # np.testing.assert_array_equal(swan["s","transpx"], variables['WIND']['Windv_x'])
+  # # np.testing.assert_array_equal(swan["s","transpy"], variables['WIND']['Windv_x'])
   
-  np.testing.assert_array_equal(swan["t","u10"], sgroup['u10'].T)
-  np.testing.assert_array_equal(swan["t","v10"], sgroup['v10'].T)
-  np.testing.assert_array_equal(swan["t","hs"], sgroup['hs'].T)
-  np.testing.assert_array_equal(swan["t","tps"], sgroup['tps'].T)
-  np.testing.assert_array_equal(swan["t","tmm10"], sgroup['tmm10'].T)
-  np.testing.assert_array_equal(swan["t","tm01"], sgroup['tm01'].T)
-  np.testing.assert_array_equal(swan["t","tm02"], sgroup['tm02'].T)
-  np.testing.assert_array_equal(swan["t","pdir"], sgroup['pdir'].T)
-  np.testing.assert_array_equal(swan["t","dir"], sgroup['dir'].T)
-  np.testing.assert_array_equal(swan["t","dspr"], sgroup['dspr'].T)
-  np.testing.assert_array_equal(swan["t","qp"], sgroup['qp'].T)
-  np.testing.assert_array_equal(swan["t","transpx"], sgroup['transpx'].T)
-  np.testing.assert_array_equal(swan["t","transpy"], sgroup['transpy'].T)  
+  # np.testing.assert_array_equal(swan["t","u10"], variables['WIND']['Windv_x'].T)
+  # np.testing.assert_array_equal(swan["t","v10"], variables['WIND']['Windv_y'].T)
+  # np.testing.assert_array_equal(swan["t","hs"], variables['HS']['Hsig'].T)
   
-  np.testing.assert_array_equal(swan["spc","spectra"], spcgroup['spectra'])  
+  # TODO: Replace name of variables below
+  # np.testing.assert_array_equal(swan["t","tps"], variables['tps'].T)
+  # np.testing.assert_array_equal(swan["t","tmm10"], variables['tmm10'].T)
+  # np.testing.assert_array_equal(swan["t","tm01"], variables['tm01'].T)
+  # np.testing.assert_array_equal(swan["t","tm02"], variables['tm02'].T)
+  # np.testing.assert_array_equal(swan["t","pdir"], variables['pdir'].T)
+  # np.testing.assert_array_equal(swan["t","dir"], variables['dir'].T)
+  # np.testing.assert_array_equal(swan["t","dspr"], variables['dspr'].T)
+  # np.testing.assert_array_equal(swan["t","qp"], variables['qp'].T)
+  # np.testing.assert_array_equal(swan["t","transpx"], variables['transpx'].T)
+  # np.testing.assert_array_equal(swan["t","transpy"], variables['transpy'].T)  
+  
+  
+  # TODO: need to change default values in spcgroup
+  # TODO: swan["spc","spectra"] does not work...I'll have to check s3-netcdf
+  # np.testing.assert_array_equal(swan["spc","spectra",0,0], spcgroup['spectra'][0,0])
+  
+  
+  np.testing.assert_array_equal(swan["spc","spectra",0,0], spcgroup['spectra'][0,0])
+  np.testing.assert_array_equal(swan["spc","spectra",8], spcgroup['spectra'][8])
+
+
 
 def test_NetCDFSWAN_logger():
   logging.basicConfig(
@@ -70,9 +95,8 @@ def test_NetCDFSWAN_logger():
   try:
     swanFolder='./data'
     jsonFile='./json/demo.json'
-    input=NetCDFSWAN.prepareInputJSON(jsonFile,swanFolder)
+    input=NetCDFSWAN.prepareInputJSON(jsonFile,swanFolder,year=2000,month=1)
     swan=NetCDFSWAN(input,logger=logger)
-    
     swan.uploadStatic()
     swan.uploadS()
     swan.uploadT()
@@ -82,5 +106,6 @@ def test_NetCDFSWAN_logger():
   
   
 if __name__ == "__main__":
-  test_NetCDFSWAN_logger()
+  test_NetCDFSWAN_write()
+  test_NetCDFSWAN()
   

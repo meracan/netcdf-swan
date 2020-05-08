@@ -80,9 +80,10 @@ class NetCDFSWAN(NetCDF2D):
   def __init__(self,obj,logger=None):
     super().__init__(obj)
     
-    self.swanFolder = swanFolder = obj.get("swanFolder")
-    self.logger     = logger
+    self.swanFolder=obj.get("swanFolder")
     
+    self.logger     = logger
+  
     # Initialize some of the info from nca to self.
     # If the info is missing, it will raise an exception.
     info        = self.info()
@@ -111,33 +112,34 @@ class NetCDFSWAN(NetCDF2D):
     # Load variables for matlab output
     # This contains an array of all variables and only used to save the temporal axis data
     variables=info['metadata'].get('mvariables')
-    self.variables = json.loads(variables)    
-    
-    # Get all files under swanFolder
-    self.files = NetCDFSWAN.getFiles(swanFolder)
+    self.variables = json.loads(variables)
     
     # Show progress bar
     self.showProgress=obj.get("showProgress",True)
     
     # Number of nodes to upload at a time
-    self.gnode = 50
+    self.gnode = obj.get("gnode",50)
  
   @property
   def matFiles(self):
     """ Get .mat files only
     """
-    files=self.files
+    swanFolder=self.swanFolder
+    if swanFolder is None:raise Exception("swanFolder was not specified")
+    files = NetCDFSWAN.getFiles(swanFolder)
     return list(filter(lambda file:file['ext']=='.mat',files))
   
   @property
   def spcFiles(self):
     """ Get .spc files only
-    """    
-    files=self.files
+    """
+    swanFolder=self.swanFolder
+    if swanFolder is None:raise Exception("swanFolder was not specified")
+    files = NetCDFSWAN.getFiles(swanFolder)
     return list(filter(lambda file:file['ext']=='.spc',files))
  
   @staticmethod
-  def prepareInputJSON(file,swanFolder):
+  def prepareInputJSON(file,swanFolder, **kwargs):
     """ Prepare input json object to load into NetCDF2D.
         This merge a few json together and extract certain info into metadata.
     """
@@ -148,15 +150,17 @@ class NetCDFSWAN(NetCDF2D):
     # Load and merge json files BCWABv5.variables.json/BCWABv5.specvariables.json
     obj["nca"]['groups']['s']['variables']=f1=NetCDFSWAN.load(os.path.join(jsonFolder,obj["nca"]['groups']['s']['variables']))
     obj["nca"]['groups']['t']['variables']=f2=NetCDFSWAN.load(os.path.join(jsonFolder,obj["nca"]['groups']['t']['variables']))
-    obj["nca"]['groups']['spc']['variables']=NetCDFSWAN.load(os.path.join(jsonFolder,obj["nca"]['groups']['spc']['variables']))
+    obj["nca"]['groups']['spc']['variables']=f3=NetCDFSWAN.load(os.path.join(jsonFolder,obj["nca"]['groups']['spc']['variables']))
     
     # Keep variables since we need to extract "matlab name" keys
     variables={**f1,**f2}
     
+    
     # Store "matlab name" into a dictionnary
+    temp={**variables,**f3} # Need to keep the spectra name
     mtname={}
-    for key in variables:
-      variable=variables.get(key)
+    for key in temp:
+      variable=temp.get(key)
       matname=variable.get("matfile name")
       mtname[matname]=key
     
@@ -165,7 +169,8 @@ class NetCDFSWAN(NetCDF2D):
     obj['nca']['metadata']['mvariables']=json.dumps(list(variables.keys()))
     
     # Get spectral stations metadata that contains the station name and id
-    meta=NetCDFSWAN.getSpectralStationMetadata(swanFolder)
+    meta=NetCDFSWAN.getSpectralStationMetadata(swanFolder, **kwargs)
+
     obj['nca']['metadata']['stations']=json.dumps(meta['stations'])
     
     if obj['nca']['dimensions']['nsnode']!=meta['nsnode']:
@@ -177,27 +182,26 @@ class NetCDFSWAN(NetCDF2D):
     return obj
     
   @staticmethod
-  def printMatKeys(swanFolder):
+  def printMatKeys(swanFolder,year=2014):
     """ Simple function to print the keys within a matlab file
     """
     files=NetCDFSWAN.getFiles(swanFolder)
-    files=list(filter(lambda file:file['ext']=='.mat',files))
+    files=list(filter(lambda file:"year" in file and file["year"]==year and "month" in file and file["month"]==1 and file['ext']=='.mat',files))
     for file in files:
       print(NetCDFSWAN.load(file["path"]).keys())
   
   @staticmethod
-  def printSpcShape(swanFolder):
+  def printSpcShape(swanFolder,year=2014):
     """ Simple function to print shape of the spectra files
     """    
     files=NetCDFSWAN.getFiles(swanFolder)
-    files=list(filter(lambda file:file['ext']=='.spc',files))
-    print(files)
+    files=list(filter(lambda file:"year" in file and file["year"]==year and "month" in file and file["month"]==1 and file['ext']=='.spc',files))
     for file in files:
-      print(NetCDFSWAN.load(file["path"])['spectra'].shape)    
+      print("{} - {}".format( file["name"] , NetCDFSWAN.load(file["path"])['spectra'].shape))    
     
   
   @staticmethod
-  def getSpectralStationMetadata(swanFolder,print_meta=False):
+  def getSpectralStationMetadata(swanFolder,print_meta=False,year=2014,month=1):
     """ Extract spectralStation MetaData
         Note that this is project specific. 
         The code is using one of the folder output to extract the .spc files.
@@ -205,7 +209,7 @@ class NetCDFSWAN(NetCDF2D):
     """
     files=NetCDFSWAN.getFiles(swanFolder)
     
-    files=list(filter(lambda file:"year"in file and "month" in file and file["year"]==2004 and file["month"]==1 and file['ext']=='.spc',files))
+    files=list(filter(lambda file:"year"in file and "month" in file and file["year"]==year and file["month"]==month and file['ext']=='.spc',files))
     
     files=sorted(files,key=lambda x:x["name"])
     obj={}
@@ -247,7 +251,6 @@ class NetCDFSWAN(NetCDF2D):
         else:
           name,ext=os.path.splitext(file)
           files.append({"name":name,"ext":ext,"path":os.path.join(r, file)})
-    
     return files
   
   @staticmethod
@@ -459,16 +462,19 @@ class NetCDFSWAN(NetCDF2D):
       
       return {"datetime":np.array(datetimes),"spectra":np.array(output)}
 
-  def uploadStatic(self):
+  def uploadStatic(self,year=2004,month=1):
     """ Upload static files to S3 (.bot,.ele,.bot, datetime,etc...)
     """
-    files=self.files
-    files=list(filter(lambda file:not "year"in file,files))
+    swanFolder=self.swanFolder
+    if swanFolder is None:raise Exception("swanFolder was not specified")
+    _files = NetCDFSWAN.getFiles(swanFolder)
+    
+    files=list(filter(lambda file:not "year"in file,_files))
     _bot = list(filter(lambda file:file['ext']==".bot",files))
     _node = list(filter(lambda file:file['ext']==".node",files))
     _ele = list(filter(lambda file:file['ext']==".ele",files))
      
-    if len(_bot)>0:self['nodes','b']=NetCDFSWAN.load(_bot[0]['path'])
+    if len(_bot)>0:self['nodes','bed']=NetCDFSWAN.load(_bot[0]['path'])
     if len(_ele)>0:self['elem','elem']=NetCDFSWAN.load(_ele[0]['path'])  
     if len(_node)>0:
       xy=NetCDFSWAN.load(_node[0]['path'])  
@@ -478,7 +484,7 @@ class NetCDFSWAN(NetCDF2D):
     # Upldoad datetime
     self['time','time']=self.datetime
     
-    spcFiles=list(filter(lambda file:"year" in file and "month" in file and file["year"]==2004 and file["month"]==1 and file['ext']=='.spc',files)) # Get one output folder
+    spcFiles=list(filter(lambda file:"year" in file and "month" in file and file["year"]==year and file["month"]==month and file['ext']=='.spc',_files)) # Get one output folder
     
     # Upldoad stations
     for spcFile in spcFiles:
@@ -489,7 +495,8 @@ class NetCDFSWAN(NetCDF2D):
       latlng=spc['latlng']
       self['stations','lon',id,:nlatlng]=latlng[:,0]
       self['stations','lat',id,:nlatlng]=latlng[:,1]
-    
+
+
     # Add freq and dir
     self['freq','freq']=spc['freq']
     self['dir','dir']=spc['dir']
@@ -551,7 +558,7 @@ class NetCDFSWAN(NetCDF2D):
   
   def uploadS(self):
     self._uploadSpatial("s")
-  def uploadSPC(self):
+  def uploadSpc(self):
     self._uploadSpatial("spc")
   def uploadT(self):
     self._uploadTemporal("t")
@@ -564,6 +571,7 @@ class NetCDFSWAN(NetCDF2D):
     """
     showProgress=self.showProgress
     mtname=self.mtname
+    stations=self.stations
     _,groups=self.loadRemainingFilestoUpload(groupName)
     
     pbar0 = tqdm(total=len(groups), position=0) if showProgress else False
@@ -585,10 +593,11 @@ class NetCDFSWAN(NetCDF2D):
           self[groupName,name,sIndex:eIndex]=array #upload
         else:
           # Spectral file
-          _nodesperstation=array.shape[1]
-          array=np.einsum("abcd->bacd") # Need to swap first and second axes
-          raise Exception("Need to check this")
-          self[groupName,name,sIndex:eIndex,:_nodesperstation]=array # Upload
+         
+          array=np.einsum("abcd->bacd",array) # Need to swap first and second axes
+          stationId= stations.get(file['name'])
+          _nodesperstation=array.shape[0]
+          self[groupName,name,stationId,:_nodesperstation,sIndex:eIndex]=array # Upload
       
       if pbar0:pbar0.update(1)
       self.removeUploadedFile(groupName,groups)
@@ -613,7 +622,7 @@ class NetCDFSWAN(NetCDF2D):
     
     files,groups=self.loadRemainingFilestoUpload(groupName)
     pbar0 = tqdm(total=len(groups), position=0) if showProgress else False
-    self.pbar = tqdm(total=1, position=1) if showProgress else False
+    pbar=self.pbar = tqdm(total=1, position=1) if showProgress else False
     
     while groups:
       i=groups.pop(0)
@@ -627,8 +636,9 @@ class NetCDFSWAN(NetCDF2D):
       for name in variables:
         groupArray[name]=np.zeros((nnodeGroup,ntime))
       
+      if pbar: pbar.reset(total=len(files))
       # Save matlab info to array
-      for file in files:
+      for _,file in enumerate(files):
         _sub=NetCDFSWAN.load(file['path'])
         dt=_sub.pop("datetime")
         sIndex,eIndex=self.getDatetimeIndex(dt)
@@ -636,8 +646,8 @@ class NetCDFSWAN(NetCDF2D):
         for key in _sub:
           array=_sub[key]
           name=mtname[key]
-          groupArray[name][:,sIndex:eIndex]=array[inodeStart:inodeEnd]
-    
+          groupArray[name][:,sIndex:eIndex]=array[:,inodeStart:inodeEnd].T
+        if pbar:pbar.update(1)
       # Save array in memory to S3
       for name in groupArray:
         array=groupArray[name]
@@ -648,4 +658,4 @@ class NetCDFSWAN(NetCDF2D):
       
     if pbar0:
       pbar0.close()
-      self.pbar.close()
+      pbar.close()

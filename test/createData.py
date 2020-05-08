@@ -1,7 +1,7 @@
 import os
 import numpy as np
 # import scipy
-import scipy.io as sio
+from scipy.io import savemat
 from dataTest import elem,time,lat,lon,bed,slat,slon,freq,dir,variables,spcgroup,stations,nodes
 from netcdfswan import NetCDFSWAN
 from datetime import datetime,timedelta
@@ -31,7 +31,12 @@ def create_mat(filePath,dic):
   mdict['__header__']="dummy header"
   mdict['__version__']="dummy version"
   mdict['__globals__']="dummy globals"
-  sio.savemat(filePath, mdict)
+
+  #pp.pprint(mdict)
+  #print(os.path.abspath(filePath))
+  savemat(filePath, mdict)
+
+
   
   
 def create_spc(filePath,dic,station):
@@ -43,39 +48,36 @@ def create_spc(filePath,dic,station):
   latlng=station['latlng']
   stationId=station['id']
   with open(filePath,"w+") as f:
-    f.write("SWAN   1    Swan standard spectral file, version\n")
+    f.write("SWAN   1                                Swan standard spectral file, version\n")
     f.write("$   Data produced by SWAN version 41.31    \n")
     f.write("$   Project: WCWI_V5         ;  run number: 01  \n")
     f.write("TIME                                    time-dependent data\n")
     f.write("     1                                  time coding option\n")
     f.write("LONLAT                                  locations in spherical coordinates\n")
-    f.write("{} number of locations\n".format(len(latlng)))
+    f.write("     {}                                  number of locations\n".format(len(latlng)))
     
     arrayStr = np.array2string(latlng,separator=' ').replace('[',"").replace(']',"")
     f.write("{}\n".format(arrayStr))
-    
-      
-    
+
     f.write("AFREQ absolute frequencies in Hz\n")
     f.write("{} number of frequencies\n".format(len(freq)))
     arrayStr = np.array2string(freq,separator='\n').replace('[',"").replace(']',"")
     f.write("{}\n".format(arrayStr))
-    
-    
-    f.write("NDIR spectral nautical directions in degr\n")
-    f.write("{} number of directions\n".format(len(dir)))
+
+    f.write("NDIR                                    spectral nautical directions in degr\n")
+    f.write("   {}                                    number of directions\n".format(len(dir)))
     arrayStr = np.array2string(dir,separator='\n').replace('[',"").replace(']',"")
     f.write("{}\n".format(arrayStr))
     
     f.write("QUANT\n")
-    f.write("1 number of quantities in table\n")
-    f.write("VaDens variance densities in m2/Hz/degr\n")
-    f.write("m2/Hz/degr unit\n")
-    f.write("-0.9900E+02 exception value\n")
+    f.write("    1                                   number of quantities in table\n")
+    f.write("VaDens                                  variance densities in m2/Hz/degr\n")
+    f.write("m2/Hz/degr                              unit\n")
+    f.write("-0.9900E+02                             exception value\n")
     
     for i,_ in enumerate(dt):
       dtStr=_.astype(object).strftime("%Y%m%d.%H%M%S")
-      f.write("{}\n".format(dtStr))  
+      f.write("{}                         date and time\n".format(dtStr))
       for inode,_ in enumerate(latlng):
         # print(stationId,inode,i)
         f.write("FACTOR\n")

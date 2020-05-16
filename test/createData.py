@@ -5,6 +5,8 @@ from scipy.io import savemat
 from dataTest import elem,time,lat,lon,bed,slat,slon,freq,dir,variables,spcgroup,stations,nodes
 from netcdfswan import NetCDFSWAN
 from datetime import datetime,timedelta
+
+
 def create_bot(filePath,array):
   np.savetxt(filePath, array, delimiter=' ')   
 
@@ -32,8 +34,7 @@ def create_mat(filePath,dic):
   mdict['__version__']="dummy version"
   mdict['__globals__']="dummy globals"
 
-  #pp.pprint(mdict)
-  #print(os.path.abspath(filePath))
+
   savemat(filePath, mdict)
 
 
@@ -169,11 +170,37 @@ def create_data():
         create_mat(filePath,dic)
         
 def check_data():
-  # TODO: read matlab file,spc and make sure it's the same array
-  # np.testing.assert_array_equal(NetCDFSWAN.load('./output/2000/12/results/HS.mat',variables['HS'][['Hsig']])
-  None
+
+  for mkey in variables.keys():
+    for mmkey in list(variables[mkey].keys()):
+      for month in range(1, 13):
+        NCDFS = np.array(NetCDFSWAN.load(f'./output/2000/{str(month)}/results/{mkey}.mat')[mmkey])
+        start = int(NCDFS[0][0]//10) # actual value is similar to the index
+        end = start + NCDFS.shape[0]
+        v = variables[mkey][mmkey][start: end]  # 0 - 745
+        np.testing.assert_array_equal(NCDFS, v)
+      print(f"{mkey}.mat ok")
+
+
+  for i, station in enumerate(stations):
+    n = stations[station]["nsnodes"]
+    sts = 0
+    for month in range(1, 13):
+      NCDFS = NetCDFSWAN.load(f'./output/2000/{str(month)}/results/{station}.spc')["spectra"]
+
+      ts = NCDFS.shape[0]
+      spg = spcgroup["spectra"][i, :n]
+
+      for node in range(n):
+        spg_n = spg[node][sts:sts+ts]
+        NCDFS_n = NCDFS[:, node]
+        np.testing.assert_array_equal(spg_n, NCDFS_n)
+        #print(f"station {station} node {node}:", NCDFS_n.shape, spg_n.shape, " start index:", sts)
+      sts += ts - 1
+    print(f"{station}.spc ok")
+
         
 if __name__ == "__main__":
   create_data()
-  # check_data()
+  check_data()
   

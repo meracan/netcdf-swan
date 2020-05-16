@@ -26,10 +26,18 @@ nodes and their coordinate information (the 'mesh' or 'grid'):
 
 ```
 |
-├-- netcdfswan.py
-└-- SWAN_DATA
-    |
-    ├-- 2005
+├-- netcdf-swan (package)
+|   ├-- src
+|   |   └-- netcdfswan.py
+|   |
+|   └-- BCSWANv5
+|       ├-- BCSWANv5.json ("master input")
+|       ├-- BCSWANv5.variables.json
+|       :
+|
+├-- SWAN_DATA
+|   |
+:   ├-- 2005
     ├-- 2006
     ├-- 2007
     :   ├-- 01
@@ -57,11 +65,8 @@ nodes and their coordinate information (the 'mesh' or 'grid'):
         ├-- .bot
         └-- .node
 ```
-
-The directory path for the SWAN data, as well as the start year and start month, 
-should be written in 'input_master.json' ahead of time so the script knows where to look when it runs. 
-Ideally, the script (src) should be placed beside the data folder. Other path names are also stored in this json file, 
-with the rest of the input as indicated in the s3-netcdf documentation.
+Ideally, netcdf-swan can be placed beside the data folder ("SWAN_DATA"), 
+but the path to the data will be contained in an 'input' json object when reading/writing to s3 (see below).
 
 ## NetCDFSWAN
 
@@ -72,8 +77,8 @@ The grid data includes coordinate data such as timesteps, latitudes, longitudes,
 
 ## Basic writing usage
 
-Simple writing usage. NetCDFSWAN needs an object with a specific format as describe in the following section.
-The function `prepareInputJSON` is a helper function to create  the object.
+Simple writing usage. NetCDFSWAN needs an object with a specific format as described in the following section.
+The function `prepareInputJSON` is a helper function to create the object.
 
 ```python
 from netcdfswan import NetCDFSWAN
@@ -108,7 +113,7 @@ input=NetCDFSWAN.prepareInputJSON(jsonFile,swanFolder)
 logging.basicConfig(
         filename=os.path.join(swanFolder,input['name'],"progress.log"),
         level=logging.DEBUG,
-        format="%(levelname)s %(asctime)s  --| %(message)s"
+        format="%(levelname)s %(asctime)s  %(message)s"
         )
 logger = logging.getLogger()
 swan=NetCDFSWAN(input,logger=logger)
@@ -118,8 +123,14 @@ swan=NetCDFSWAN(input,logger=logger)
 ```
 
 #### Input Json file
-Add text here to explain the json file
 
+The input for creating a master file contains s3 info, metadata, dimensions, partition group, variables, etc.
+
+Metadata attributes are stored in the metadata object.
+
+Dimensions, groups and variables are stored in the nca object.
+
+The input 'master' file from the BC SWAN dataset is provided as an example:
 ```json
 {
   "name":"SWANv5",
@@ -169,7 +180,8 @@ Add text here to explain the json file
 }
 ```
 #### Input Variable Json file
-Add text here to explain the json file
+A list of variables includes type, units and names associated with that parameter. 
+The "matfile name" is taken from the array labels in the data itself.
 ```json
 {
   "u10": {
@@ -267,7 +279,7 @@ Add text here to explain the json file
 ```
 
 #### Input Variable Json file
-Add text here to explain the json file
+The spectra data object is similar, with only one variable name "spectra".
 ```json
 {
   "spectra": {

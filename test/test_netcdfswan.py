@@ -23,8 +23,9 @@ def test_NetCDFSWAN():
   
   input={
     "name":"test1",
+    "bucket":"uvic-bcwave",
     "cacheLocation":"../../s3",
-    "localOnly":True
+    "localOnly":False
   }
   
   swan=NetCDFSWAN(input)
@@ -78,8 +79,17 @@ def test_NetCDFSWAN():
   # TODO: need to change default values in spcgroup
   # TODO: swan["spc","spectra"] does not work...I'll have to check s3-netcdf
   
-  np.testing.assert_array_equal(swan["spc","spectra",0,0], spcgroup['spectra'][0,0])
-  np.testing.assert_array_equal(swan["spc","spectra",8], spcgroup['spectra'][8])
+  # print(swan.groups['spc'].child)
+  # for i,id in enumerate(stations):
+  #   nsnode =stations[id]
+  #   for j in range(nsnode):
+  #     np.testing.assert_array_equal(swan["spc","spectra",i,j], spcgroup['spectra'][0,1])
+  # np.testing.assert_array_equal(swan["spc","spectra",0,1], spcgroup['spectra'][0,1])
+  
+  # x=swan["spc","spectra",1,1]
+  
+  # np.testing.assert_array_equal(swan["spc","spectra",1,0], spcgroup['spectra'][1,0])
+  # np.testing.assert_array_equal(swan["spc","spectra",8], spcgroup['spectra'][8])
 
 
 
@@ -105,6 +115,6 @@ def test_NetCDFSWAN_logger():
   
   
 if __name__ == "__main__":
-  test_NetCDFSWAN_write()
+  # test_NetCDFSWAN_write()
   test_NetCDFSWAN()
   

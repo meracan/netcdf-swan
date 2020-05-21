@@ -115,7 +115,18 @@ class NetCDFSWAN(NetCDF2D):
     self.variables = json.loads(variables)
     
     # Show progress bar
-    self.showProgress=obj.get("showProgress",True)
+    self.showProgress=showProgress=obj.get("showProgress",False)
+    self.pbar0=None 
+    if showProgress:
+      try:
+        from tqdm import tqdm
+        self.pbar0 = tqdm(total=1, position=0)
+        self.pbar = tqdm(total=1, position=1)
+      except Exception as err:
+        import warnings
+        warnings.warn("tqdm does not exist")
+    
+      
     
     # Number of nodes to upload at a time
     self.gnode = obj.get("gnode",50)
@@ -468,7 +479,7 @@ class NetCDFSWAN(NetCDF2D):
     swanFolder=self.swanFolder
     if swanFolder is None:raise Exception("swanFolder was not specified")
     _files = NetCDFSWAN.getFiles(swanFolder)
-    
+
     files=list(filter(lambda file:not "year"in file,_files))
     _bot = list(filter(lambda file:file['ext']==".bot",files))
     _node = list(filter(lambda file:file['ext']==".node",files))
@@ -493,13 +504,16 @@ class NetCDFSWAN(NetCDF2D):
       spc=NetCDFSWAN.load(spcFile['path'],return_metadata=True)
       nlatlng=spc['nlatlng']
       latlng=spc['latlng']
-      self['stations','lon',id,:nlatlng]=latlng[:,0]
-      self['stations','lat',id,:nlatlng]=latlng[:,1]
+      self['stations','slon',id,:nlatlng]=latlng[:,0]
+      self['stations','slat',id,:nlatlng]=latlng[:,1]
 
 
     # Add freq and dir
     self['freq','freq']=spc['freq']
     self['dir','dir']=spc['dir']
+    
+    if self.pbar0: self.pbar0.update(1)
+    if self.pbar: self.pbar.update(1)
     
 
   def getDatetimeIndex(self,dt):
@@ -574,8 +588,10 @@ class NetCDFSWAN(NetCDF2D):
     stations=self.stations
     _,groups=self.loadRemainingFilestoUpload(groupName)
     
-    pbar0 = tqdm(total=len(groups), position=0) if showProgress else False
-    self.pbar = tqdm(total=1, position=1) if showProgress else False
+    
+    pbar0=self.pbar0
+    if pbar0 is not None: pbar0.reset(total=len(groups))
+    
     
     while groups:
       file=groups.pop(0)
@@ -599,12 +615,13 @@ class NetCDFSWAN(NetCDF2D):
           _nodesperstation=array.shape[0]
           self[groupName,name,stationId,:_nodesperstation,sIndex:eIndex]=array # Upload
       
+      
       if pbar0:pbar0.update(1)
       self.removeUploadedFile(groupName,groups)
     
-    if pbar0:
-      pbar0.close()
-      self.pbar.close()
+    # if pbar0:
+    #   pbar0.close()
+    #   self.pbar.close()
   
   def _uploadTemporal(self,groupName):
     """ Upload Temporal results
@@ -621,8 +638,10 @@ class NetCDFSWAN(NetCDF2D):
     variables=self.variables
     
     files,groups=self.loadRemainingFilestoUpload(groupName)
-    pbar0 = tqdm(total=len(groups), position=0) if showProgress else False
-    pbar=self.pbar = tqdm(total=1, position=1) if showProgress else False
+    
+    pbar=self.pbar
+    pbar0=self.pbar0
+    if pbar0 is not None: pbar0.reset(total=len(groups))
     
     while groups:
       i=groups.pop(0)
@@ -636,7 +655,7 @@ class NetCDFSWAN(NetCDF2D):
       for name in variables:
         groupArray[name]=np.zeros((nnodeGroup,ntime))
       
-      if pbar: pbar.reset(total=len(files))
+      if pbar is not None: pbar.reset(total=len(files))
       # Save matlab info to array
       for _,file in enumerate(files):
         _sub=NetCDFSWAN.load(file['path'])
@@ -656,6 +675,6 @@ class NetCDFSWAN(NetCDF2D):
       if pbar0:pbar0.update(1)
       self.removeUploadedFile(groupName,groups)
       
-    if pbar0:
-      pbar0.close()
-      pbar.close()
+    # if pbar0:
+    #   pbar0.close()
+    #   pbar.close()

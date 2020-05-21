@@ -6,8 +6,9 @@ setup(
     author="Samuel Johnson",
     author_email="samdljohnson@gmail.com",
     url="https://github.com/meracan/netcdf-swan",
-    packages=find_packages('src', exclude=["tests", "tests.*"]),
-    package_dir={'': 'src'},
+    # packages=find_packages('src', exclude=["tests", "tests.*"]),
+    # package_dir={'': 'src'},
+    packages=["netcdfswan"],
     include_package_data=True,
     install_requires=[
         'scipy',

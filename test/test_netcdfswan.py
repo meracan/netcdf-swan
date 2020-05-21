@@ -108,6 +108,6 @@ def test_NetCDFSWAN_logger():
   
   
 if __name__ == "__main__":
-  # test_NetCDFSWAN_write()
+  test_NetCDFSWAN_write()
   test_NetCDFSWAN()
   

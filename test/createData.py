@@ -1,10 +1,12 @@
 import os
 import numpy as np
 # import scipy
-import scipy.io as sio
+from scipy.io import savemat
 from dataTest import elem,time,lat,lon,bed,slat,slon,freq,dir,variables,spcgroup,stations,nodes
 from netcdfswan import NetCDFSWAN
 from datetime import datetime,timedelta
+
+
 def create_bot(filePath,array):
   np.savetxt(filePath, array, delimiter=' ')   
 
@@ -31,7 +33,11 @@ def create_mat(filePath,dic):
   mdict['__header__']="dummy header"
   mdict['__version__']="dummy version"
   mdict['__globals__']="dummy globals"
-  sio.savemat(filePath, mdict)
+
+
+  savemat(filePath, mdict)
+
+
   
   
 def create_spc(filePath,dic,station):
@@ -43,39 +49,36 @@ def create_spc(filePath,dic,station):
   latlng=station['latlng']
   stationId=station['id']
   with open(filePath,"w+") as f:
-    f.write("SWAN   1    Swan standard spectral file, version\n")
+    f.write("SWAN   1                                Swan standard spectral file, version\n")
     f.write("$   Data produced by SWAN version 41.31    \n")
     f.write("$   Project: WCWI_V5         ;  run number: 01  \n")
     f.write("TIME                                    time-dependent data\n")
     f.write("     1                                  time coding option\n")
     f.write("LONLAT                                  locations in spherical coordinates\n")
-    f.write("{} number of locations\n".format(len(latlng)))
+    f.write("     {}                                  number of locations\n".format(len(latlng)))
     
     arrayStr = np.array2string(latlng,separator=' ').replace('[',"").replace(']',"")
     f.write("{}\n".format(arrayStr))
-    
-      
-    
+
     f.write("AFREQ absolute frequencies in Hz\n")
     f.write("{} number of frequencies\n".format(len(freq)))
     arrayStr = np.array2string(freq,separator='\n').replace('[',"").replace(']',"")
     f.write("{}\n".format(arrayStr))
-    
-    
-    f.write("NDIR spectral nautical directions in degr\n")
-    f.write("{} number of directions\n".format(len(dir)))
+
+    f.write("NDIR                                    spectral nautical directions in degr\n")
+    f.write("   {}                                    number of directions\n".format(len(dir)))
     arrayStr = np.array2string(dir,separator='\n').replace('[',"").replace(']',"")
     f.write("{}\n".format(arrayStr))
     
     f.write("QUANT\n")
-    f.write("1 number of quantities in table\n")
-    f.write("VaDens variance densities in m2/Hz/degr\n")
-    f.write("m2/Hz/degr unit\n")
-    f.write("-0.9900E+02 exception value\n")
+    f.write("    1                                   number of quantities in table\n")
+    f.write("VaDens                                  variance densities in m2/Hz/degr\n")
+    f.write("m2/Hz/degr                              unit\n")
+    f.write("-0.9900E+02                             exception value\n")
     
     for i,_ in enumerate(dt):
       dtStr=_.astype(object).strftime("%Y%m%d.%H%M%S")
-      f.write("{}\n".format(dtStr))  
+      f.write("{}                         date and time\n".format(dtStr))
       for inode,_ in enumerate(latlng):
         # print(stationId,inode,i)
         f.write("FACTOR\n")
@@ -167,11 +170,37 @@ def create_data():
         create_mat(filePath,dic)
         
 def check_data():
-  # TODO: read matlab file,spc and make sure it's the same array
-  # np.testing.assert_array_equal(NetCDFSWAN.load('./output/2000/12/results/HS.mat',variables['HS'][['Hsig']])
-  None
+
+  for mkey in variables.keys():
+    for mmkey in list(variables[mkey].keys()):
+      for month in range(1, 13):
+        NCDFS = np.array(NetCDFSWAN.load(f'./output/2000/{str(month)}/results/{mkey}.mat')[mmkey])
+        start = int(NCDFS[0][0]//10) # actual value is similar to the index
+        end = start + NCDFS.shape[0]
+        v = variables[mkey][mmkey][start: end]  # 0 - 745
+        np.testing.assert_array_equal(NCDFS, v)
+      print(f"{mkey}.mat ok")
+
+
+  for i, station in enumerate(stations):
+    n = stations[station]["nsnodes"]
+    sts = 0
+    for month in range(1, 13):
+      NCDFS = NetCDFSWAN.load(f'./output/2000/{str(month)}/results/{station}.spc')["spectra"]
+
+      ts = NCDFS.shape[0]
+      spg = spcgroup["spectra"][i, :n]
+
+      for node in range(n):
+        spg_n = spg[node][sts:sts+ts]
+        NCDFS_n = NCDFS[:, node]
+        np.testing.assert_array_equal(spg_n, NCDFS_n)
+        #print(f"station {station} node {node}:", NCDFS_n.shape, spg_n.shape, " start index:", sts)
+      sts += ts - 1
+    print(f"{station}.spc ok")
+
         
 if __name__ == "__main__":
   create_data()
-  # check_data()
+  check_data()
   

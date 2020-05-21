@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="netcdf-swan",
+    name="netcdfswan",
     version="0.0.1",
     author="Samuel Johnson",
     author_email="samdljohnson@gmail.com",

@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="netcdf-swan",
+    name="netcdfswan",
     version="0.0.1",
     author="Samuel Johnson",
     author_email="samdljohnson@gmail.com",
@@ -12,7 +12,8 @@ setup(
     install_requires=[
         'scipy',
         'numpy',
-        #'netcdf4',
+        'netcdf4',
+        'tqdm'
     ],
     python_requires='>=3.6',
 )

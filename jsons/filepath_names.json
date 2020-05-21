@@ -1,7 +1,0 @@
-{
-  "data_folder": "../BCSWANv5",
-  "mesh_folder": "../BCSWANv5/Mesh",
-  "swanv5": "../s3/SWANv5/SWANv5.nca",
-  "test_data_folder": "./data",
-  "test_mesh_folder": "./data/Mesh"
-}

@@ -1,1 +1,1 @@
-from .netcdfswan import NodeMap
+from .netcdfswan import NetCDFSWAN

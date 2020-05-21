@@ -1,9 +1,10 @@
 {
   "name":"test1",
   "cacheLocation":"../../s3",
-  "localOnly":true,
+  "localOnly":false,
   "bucket":"uvic-bcwave",
   "gnode":1,
+  "showProgress":true,
   "nca": {
     "metadata":{
       "title":"BCSWANv5",
@@ -27,8 +28,8 @@
         }
       },
       "stations":{"dimensions":["nstation","nsnode"],"variables":{
-          "lat":{"type":"f8", "units":"degrees_north" ,"standard_name":"latitude" ,"long_name":"latitude"},
-          "lon":{"type":"f8", "units":"degrees_east" ,"standard_name":"longitude" ,"long_name":"longitude"}
+          "slat":{"type":"f8", "units":"degrees_north" ,"standard_name":"latitude" ,"long_name":"latitude"},
+          "slon":{"type":"f8", "units":"degrees_east" ,"standard_name":"longitude" ,"long_name":"longitude"}
         }
       },    
       "freq":{"dimensions":["nfreq"],"variables":{

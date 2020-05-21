@@ -24,8 +24,9 @@ def test_NetCDFSWAN():
   
   input={
     "name":"test1",
+    "bucket":"uvic-bcwave",
     "cacheLocation":"../../s3",
-    "localOnly":True
+    "localOnly":False
   }
   
   swan=NetCDFSWAN(input)
@@ -57,6 +58,7 @@ def test_NetCDFSWAN():
   np.testing.assert_array_equal(swan["t","u10"], variables['WIND']['Windv_x'].T)
   np.testing.assert_array_equal(swan["t","v10"], variables['WIND']['Windv_y'].T)
   np.testing.assert_array_equal(swan["t","hs"], variables['HS']['Hsig'].T)
+
   np.testing.assert_array_equal(swan["t","tps"], variables['TPS']['TPsmoo'].T)
   np.testing.assert_array_equal(swan["t","tmm10"], variables['TMM10']['Tm_10'].T)
   np.testing.assert_array_equal(swan["t","tm01"], variables['TM01']['Tm01'].T)
@@ -67,8 +69,6 @@ def test_NetCDFSWAN():
   np.testing.assert_array_equal(swan["t","qp"], variables['QP']['Qp'].T)
   np.testing.assert_array_equal(swan["t","transpx"], variables['TRANSP']['Transp_x'].T)
   np.testing.assert_array_equal(swan["t","transpy"], variables['TRANSP']['Transp_y'].T)
-
-  # TODO: swan["spc","spectra"] does not work. Check s3-netcdf
 
   for i, station in enumerate(stations):
     n = stations[station]["nsnodes"]
@@ -108,6 +108,6 @@ def test_NetCDFSWAN_logger():
   
   
 if __name__ == "__main__":
-  test_NetCDFSWAN_write()
+  # test_NetCDFSWAN_write()
   test_NetCDFSWAN()
   

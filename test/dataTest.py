@@ -46,6 +46,7 @@ variables={
 
 nshape=nstation*nsnode*ntime*nfreq*ndir
 shape=(nstation,nsnode,ntime,nfreq,ndir)
+
 spcgroup={
   "spectra":(np.arange(nshape,dtype="f8")).reshape(shape)
 }

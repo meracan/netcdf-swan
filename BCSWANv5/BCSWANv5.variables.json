@@ -53,7 +53,7 @@
     "units": "degrees", 
     "standard name": "peak wave direction", 
     "long name": "peak wave direction in degrees",
-    "matfile name": "Pdir"
+    "matfile name": "PkDir"
   },
   "dir": {
     "type":"f4",

@@ -1,15 +1,16 @@
 {
-  "name":"SWANv5",
-  "cacheLocation":"../s3",
-  "localOnly":true,
+  "name":"julien-SWANv5",
+  "cacheLocation":"../../s3",
+  "localOnly":false,
+  "showProgress":true,
   "bucket":"uvic-bcwave",
   "nca": {
     "metadata":{
-      "title":"BCSWANv5",
+      "title":"julien-BCSWANv5",
       "startDate":"2004-01-01T00:00:00",
       "timeStep(h)":1
     },
-    "dimensions" : {"npe":3,"nelem":348364,"nnode":177945,"nstation":27,"nsnode":198,"ntime":130000,"nfreq":34,"ndir":36},
+    "dimensions" : {"npe":3,"nelem":348364,"nnode":177945,"nstation":28,"nsnode":198,"ntime":130000,"nfreq":34,"ndir":36},
     "groups":{
       "elem":{"dimensions":["nelem","npe"],"variables":{
           "elem":{"type":"i4", "units":"" ,"standard_name":"elements" ,"long_name":"elements"}
@@ -26,8 +27,8 @@
         }
       },
       "stations":{"dimensions":["nstation","nsnode"],"variables":{
-          "lat":{"type":"f8", "units":"degrees_north" ,"standard_name":"latitude" ,"long_name":"latitude"},
-          "lon":{"type":"f8", "units":"degrees_east" ,"standard_name":"longitude" ,"long_name":"longitude"}
+          "slat":{"type":"f8", "units":"degrees_north" ,"standard_name":"latitude" ,"long_name":"latitude"},
+          "slon":{"type":"f8", "units":"degrees_east" ,"standard_name":"longitude" ,"long_name":"longitude"}
         }
       },    
       "freq":{"dimensions":["nfreq"],"variables":{

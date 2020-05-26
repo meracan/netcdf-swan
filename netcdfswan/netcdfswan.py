@@ -114,6 +114,9 @@ class NetCDFSWAN(NetCDF2D):
     variables=info['metadata'].get('mvariables')
     self.variables = json.loads(variables)
     
+    # Avoid certain files
+    self.blacklist=info['metadata'].get('blacklist') or []
+    
     # Show progress bar
     self.showProgress=showProgress=obj.get("showProgress",False)
     self.pbar0=None 
@@ -138,7 +141,7 @@ class NetCDFSWAN(NetCDF2D):
     swanFolder=self.swanFolder
     if swanFolder is None:raise Exception("swanFolder was not specified")
     files = NetCDFSWAN.getFiles(swanFolder)
-    return list(filter(lambda file:file['ext']=='.mat',files))
+    return list(filter(lambda file:file['ext']=='.mat' and file['name'] not in self.blacklist,files))
   
   @property
   def spcFiles(self):

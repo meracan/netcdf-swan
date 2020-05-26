@@ -1,12 +1,12 @@
 {
-  "name":"julien-SWANv5",
+  "name":"SWANv5",
   "cacheLocation":"../../s3",
   "localOnly":false,
   "showProgress":true,
   "bucket":"uvic-bcwave",
   "nca": {
     "metadata":{
-      "title":"julien-BCSWANv5",
+      "title":"BCSWANv5",
       "startDate":"2004-01-01T00:00:00",
       "timeStep(h)":1
     },

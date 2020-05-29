@@ -117,6 +117,14 @@ class NetCDFSWAN(NetCDF2D):
     # Avoid certain files
     self.blacklist=info['metadata'].get('blacklist') or []
     
+    # Collect corrupted files. Read from json first, if available
+    path = os.path.join(self.folder, "error_list.json")
+    if os.path.isfile(path):
+      self.errorlist = json.load(open(path))
+    else:
+      json.dump([], open(path, "w+"))
+      self.errorlist = []
+    
     # Show progress bar
     self.showProgress=showProgress=obj.get("showProgress",False)
     self.pbar0=None 
@@ -599,10 +607,22 @@ class NetCDFSWAN(NetCDF2D):
     while groups:
       file=groups.pop(0)
       if pbar0: pbar0.set_description(file['name'])
-      if self.logger:self.logger.info("Uploading {}".format(file['path']))
       
-      _sub=NetCDFSWAN.load(file['path']) # Load matlab or spc file
-      dt=_sub.pop("datetime")# Remove datetime from dict since we don't want to upload this
+      try:
+        _sub=NetCDFSWAN.load(file['path']) # Load matlab or spc file
+      except Exception as e:
+        _e = type(e).__name__
+        self.errorlist.append(file)
+        path = os.path.join(self.folder, "error_list.json")
+        with open(path,"w+") as f: f.write(self.errorlist)
+        if pbar0:pbar0.update(1)
+        self.removeUploadedFile(groupName,groups)
+        
+        if self.logger: self.logger.info("{}: Couldn't upload {}. Check error_list.json".format(_e, file['path']))
+        continue
+      
+      if self.logger:self.logger.info("Uploading {}".format(file['path']))
+      dt=_sub.pop("datetime") # Remove datetime from dict since we don't want to upload this
       sIndex,eIndex=self.getDatetimeIndex(dt) # Get datetime index
       
       for key in _sub: # Loop for each variable(e.g Windv_x and Windv_y)

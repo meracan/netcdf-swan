@@ -102,7 +102,7 @@ def test_NetCDFSWAN_uvicswan():
   
   # create input json object (needs nca object)
   # make sure localOnly is set to False
-  inputFile = "netcdf-swan/BCSWANv5/BCSWANv5.json" 
+  inputFile = "../BCSWANv5/BCSWANv5.json"
   with open(inputFile, "r") as f:
     inputJson = json.load(f)
   

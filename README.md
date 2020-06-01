@@ -21,16 +21,33 @@ pip install ./netcdf-swan
 ```
 
 ## Usage
-Simple reading usage
+
+
+Simple reading usage to download UVic's Swan data from the s3 bucket (needs credentials, see "AWS S3 Credentials" contacts below) 
 ```python
 from netcdfswan import NetCDFSWAN
 
-input={
+inputFile = "netcdf-swan/BCSWANv5/BCSWANv5.json"
+with open(inputFile, "r") as f: 
+  inputJson = json.load(f)
+
+swan = NetCDFSWAN(inputJson)
+
+# Read metadata information
+print(swan.info())
+```
+
+
+Simple reading usage, from local cache
+```python
+from netcdfswan import NetCDFSWAN
+
+input = {
   "name":"BCSWANv5",
   "cacheLocation":"../s3",
 }
 
-swan=NetCDFSWAN(input)
+swan = NetCDFSWAN(input)
 
 # Read lat coordinate for all nodes
 print(swan['nodes','lat'])
@@ -46,6 +63,8 @@ print(swan['spc','spectra',0])
 
 ```
 
+
+	
 #### Variables
 Swan results has stored... 
 

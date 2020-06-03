@@ -52,3 +52,7 @@ def test_uvicswan():
       
       np.testing.assert_array_equal(local_nodes, rmote_nodes)
       print(f"{key}: t={t} OK")
+      
+if __name__ == "__main__":
+  test_uvicswan()
+  

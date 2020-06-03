@@ -5,13 +5,6 @@ import numpy as np
 import logging
 from dataTest import elem,time,lat,lon,bed,slat,slon,freq,dir,spcgroup,variables, stations
 
-# for testing actual data
-from datetime import datetime
-from netCDF4 import num2date, date2num
-from netcdfswan import NetCDFSWAN
-import random
-from scipy.io import loadmat
-
 
 def test_NetCDFSWAN_write():
   swanFolder='./output'
@@ -27,7 +20,7 @@ def test_NetCDFSWAN_write():
   swan.uploadSpc()
 
 
-def test_NetCDFSWAN_demo_data():
+def test_NetCDFSWAN():
 
   
   input={
@@ -117,6 +110,5 @@ def test_NetCDFSWAN_logger():
   
 if __name__ == "__main__":
   test_NetCDFSWAN_write()
-  test_NetCDFSWAN_demo_data()
-  #test_NetCDFSWAN_uvicswan()
+  test_NetCDFSWAN()
   

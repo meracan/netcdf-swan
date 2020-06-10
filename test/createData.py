@@ -133,9 +133,8 @@ def create_data():
     month = date.month
     day=date.day
     hour=date.hour
-    print(date)
     if day==1 and hour ==0:
-     
+      print(date, "...")
       if month+1>12:
         endDate= datetime(year+1,1,1)
       else:

@@ -18,6 +18,7 @@ num_stations_to_test = 5
 num_timesteps_to_test = 7
 
 def test_uvicswan_mat():
+  global num_timesteps_to_test
   
   # create input json object (needs nca object)
   inputFile = "./BCSWANv5.json"
@@ -61,6 +62,7 @@ def test_uvicswan_mat():
 
 
 def test_uvicswan_spc():
+  global num_stations_to_test, num_timesteps_to_test
   
   # create input json object
   inputFile = "./BCSWANv5.json" # set localOnly to False

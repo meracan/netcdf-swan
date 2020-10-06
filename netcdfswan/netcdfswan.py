@@ -479,26 +479,39 @@ class NetCDFSWAN(NetCDF2D):
     """ Upload static files to S3 (.bot,.ele,.bot, datetime,etc...)
     """
     swanFolder=self.swanFolder
+    pbar0=self.pbar0
+    pbar=self.pbar
+    
+    
     if swanFolder is None:raise Exception("swanFolder was not specified")
     _files = NetCDFSWAN.getFiles(swanFolder)
+    spcFiles=list(filter(lambda file:"year" in file and "month" in file and file["year"]==year and file["month"]==month and file['ext']=='.spc',_files)) # Get one output folder
+    
+    if pbar0: pbar0.reset(total=5+1+1+2)
+    
+    def update(name):
+      if pbar0: pbar0.set_description(name);pbar0.update(1)
+    
+    def update1(name):
+      if pbar: pbar.set_description(name);pbar.update(1)
 
     files=list(filter(lambda file:not "year"in file,_files))
     _bot = list(filter(lambda file:file['ext']==".bot",files))
     _node = list(filter(lambda file:file['ext']==".node",files))
     _ele = list(filter(lambda file:file['ext']==".ele",files))
      
-    if len(_bot)>0:self['nodes','bed']=NetCDFSWAN.load(_bot[0]['path'])
-    if len(_ele)>0:self['elem','elem']=NetCDFSWAN.load(_ele[0]['path'])  
+    if len(_bot)>0:self['nodes','bed']=NetCDFSWAN.load(_bot[0]['path']);update("nodes")
+    if len(_ele)>0:self['elem','elem']=NetCDFSWAN.load(_ele[0]['path']);update("elem")
+    
     if len(_node)>0:
       xy=NetCDFSWAN.load(_node[0]['path'])  
-      self['nodes','lon']=xy[:,0]
-      self['nodes','lat']=xy[:,1]
+      self['nodes','lon']=xy[:,0];update("lon")
+      self['nodes','lat']=xy[:,1];update("lat")
     
     # Upldoad datetime
-    self['time','time']=self.datetime
+    self['time','time']=self.datetime;update("time")
     
-    spcFiles=list(filter(lambda file:"year" in file and "month" in file and file["year"]==year and file["month"]==month and file['ext']=='.spc',_files)) # Get one output folder
-    
+    if pbar: pbar.reset(total=len(spcFiles))
     # Upldoad stations
     for spcFile in spcFiles:
       name=spcFile['name']
@@ -512,17 +525,19 @@ class NetCDFSWAN(NetCDF2D):
       self['snodes','slon',iIndex:eIndex]=latlng[:,0]
       self['snodes','slat',iIndex:eIndex]=latlng[:,1]
       self['snodes','stationid',iIndex:eIndex]=np.zeros(eIndex-iIndex,dtype="int32")+id
+      update1(name)
+    update('spc')
   
+    if pbar: pbar.reset(total=len(self.stations.keys()))
     for name in self.stations:
       id=self.stations[name]['id']
       self['stations','name',id]=name
-
+      update1(name)
+    update('stations')
     # Add freq and dir
-    self['freq','freq']=spc['freq']
-    self['dir','dir']=spc['dir']
-    
-    if self.pbar0: self.pbar0.update(1)
-    if self.pbar: self.pbar.update(1)
+    self['freq','freq']=spc['freq'];update("freq")
+    self['dir','dir']=spc['dir'];update("dir")
+
     
 
   def getDatetimeIndex(self,dt):

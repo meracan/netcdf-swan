@@ -78,6 +78,22 @@ def create_spc(filePath,dic,station):
     f.write("m2/Hz/degr                              unit\n")
     f.write("-0.9900E+02                             exception value\n")
     
+    # ------- To test spinup, add extra date --------------
+    if dt[0].astype('datetime64[M]').astype(int) % 12 + 1==1:
+      _d = dt[0]-np.timedelta64(10,"D")
+      
+      dtStr=_d.astype(object).strftime("%Y%m%d.%H%M%S")
+      f.write("{}                         date and time\n".format(dtStr))
+      for inode,_ in enumerate(latlng):
+        # print(stationId,inode,i)
+        f.write("FACTOR\n")
+        factor=1
+        array=(spectra[inode,0]/factor).astype("i4")
+        
+        arrayStr = np.array2string(array,separator=',').replace(" ","").replace('[',"").replace(']',"").replace(","," ")
+        f.write("{}\n".format(factor))
+        f.write("{}\n".format(arrayStr))
+    # -------------------------------------------------------
     for i,_ in enumerate(dt):
       dtStr=_.astype(object).strftime("%Y%m%d.%H%M%S")
       f.write("{}                         date and time\n".format(dtStr))

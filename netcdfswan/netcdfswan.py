@@ -374,7 +374,7 @@ class NetCDFSWAN(NetCDF2D):
     return output
 
   @staticmethod
-  def loadSpc(filepath,return_metadata=False):
+  def loadSpc(filepath,return_metadata=False,monthOnly=None):
     """
     Aggregates all spc files (stored as .spc instead of .mat) for one month.
     Each datum in the block is multiplied with that block's FACTOR.
@@ -449,10 +449,12 @@ class NetCDFSWAN(NetCDF2D):
       data = True
       output=[]
       datetimes=[]
+      
       while data:
         token = line.split()[0]
         if re.match(re_spcdate, token):
-          datetimes.append(np.array(datetime(int(token[:4]), int(token[4:6]), int(token[6:8]), int(token[9:11])),dtype="datetime64[s]"))
+          year=int(token[:4]);month=int(token[4:6]);day=int(token[6:8]);hour=int(token[9:11])
+          date_time = np.array(datetime(year,month,day,hour),dtype="datetime64[s]")
           array=np.zeros((nlonlat,nfreq,ndir),dtype="f8")
           for i in range(nlonlat):
             FACTOR = s.readline().split()[0].strip()
@@ -461,7 +463,10 @@ class NetCDFSWAN(NetCDF2D):
             factor = s.readline().split()[0].strip()
             factor = float(factor)
             array[i]=np.array([np.array([float(int(d)*factor) for d in s.readline().split()]) for afreq in range(nfreq)])
-          output.append(array)
+          
+          if monthOnly and monthOnly==month:
+            datetimes.append(date_time)
+            output.append(array)
         else:
             raise Exception(f"date mismatch in load_spc(). reading from stopped")
         line = s.readline()  # ready next line
@@ -602,7 +607,7 @@ class NetCDFSWAN(NetCDF2D):
       if pbar0: pbar0.set_description(file['name'])
       if self.logger:self.logger.info("Uploading {}".format(file['path']))
       
-      _sub=NetCDFSWAN.load(file['path']) # Load matlab or spc file
+      _sub=NetCDFSWAN.load(file['path'],monthOnly=file['month']) # Load matlab or spc file
       dt=_sub.pop("datetime")# Remove datetime from dict since we don't want to upload this
       sIndex,eIndex=self.getDatetimeIndex(dt) # Get datetime index
       

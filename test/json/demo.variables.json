@@ -4,90 +4,103 @@
     "units": "m/s", 
     "standard name": "u Wind velocity", 
     "long name": "u Wind velocity, m/s",
-    "matfile name": "Windv_x"
+    "matfile name": "Windv_x",
+    "fileKey":"WIND"
   },
   "v10": {
     "type":"f4",
     "units": "m/s", 
     "standard name": "v Wind velocity", 
     "long name": "v Wind velocity, m/s",
-    "matfile name": "Windv_y"
+    "matfile name": "Windv_y",
+    "fileKey":"WIND"
   },
   "hs": {
     "type":"f4",
     "units": "m", 
     "standard name": "significant wave height", 
     "long name": "significant wave height (in s)",
-    "matfile name": "Hsig"
+    "matfile name": "Hsig",
+    "fileKey":"HS"
   },
   "tps": {
     "type":"f4",
     "units": "s", 
     "standard name": "peak period", 
     "long name": "smoothed peak period (in s)",
-    "matfile name": "TPsmoo"
+    "matfile name": "TPsmoo",
+    "fileKey":"TPS"
   },
   "tmm10": {
     "type":"f4",
     "units": "s", 
     "standard name": "mean absolute wave period", 
     "long name": "mean absolute wave period (in s)",
-    "matfile name": "Tm_10"
+    "matfile name": "Tm_10",
+    "fileKey":"TMM10"
   },
   "tm01": {
     "type":"f4",
     "units": "s", 
     "standard name": "mean absolute wave period", 
     "long name": "mean absolute wave period (in s)",
-    "matfile name": "Tm01"
+    "matfile name": "Tm01",
+    "fileKey":"TM01"
   },
   "tm02": {
     "type":"f4",
     "units": "s", 
     "standard name": "mean absolute zero-crossing period", 
     "long name": "mean absolute zero-crossing period (in s)",
-    "matfile name": "Tm02"
+    "matfile name": "Tm02",
+    "fileKey":"TM02"
   },
   "pdir": {
     "type":"f4",
     "units": "degrees", 
     "standard name": "peak wave direction", 
     "long name": "peak wave direction in degrees",
-    "matfile name": "Pdir"
+    "matfile name": "Pdir",
+    "fileKey":"PDIR"
   },
   "dir": {
     "type":"f4",
     "units": "", 
     "standard name": "mean wave direction", 
     "long name": "mean wave direction (Cartesian or Nautical convention)",
-    "matfile name": "Dir"
+    "matfile name": "Dir",
+    "fileKey":"DIR"
   },
   "dspr": {
     "type":"f4",
     "units": "degrees", 
     "standard name": "directional wave spread", 
     "long name": "directional spreading of the waves (in degrees)",
-    "matfile name": "Dspr"
+    "matfile name": "Dspr",
+    "fileKey":"DSPR"
   },
   "qp": {
     "type":"f4",
     "units": "", 
     "standard name": "peakedness of wave spectrum",
     "long name": "peakedness of the wave spectrum (dimensionless)",
-    "matfile name": "Qp"
+    "matfile name": "Qp",
+    "fileKey":"QP"
   },
   "transpx": {
     "type":"f4",
     "units": "m3/s", 
     "standard name": "x transport of energy",
     "long name": "x transport of energy (in W/m or m3/s)",
-    "matfile name": "Transp_x"
+    "matfile name": "Transp_x",
+    "fileKey":"TRANSP"
   },
   "transpy": {
     "type":"f4",
     "units": "m3/s",
     "standard name": "y transport of energy",
     "long name": "y transport of energy (in W/m or m3/s)",
-    "matfile name": "Transp_y"
+    "matfile name": "Transp_y",
+    "fileKey":"TRANSP"
   }
 }

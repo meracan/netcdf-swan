@@ -5,7 +5,7 @@ npe=3
 nelem=20
 nnode=10
 nstation=27
-nsnode=3
+nsnode=32
 ntime=8760
 nfreq=3
 ndir=5
@@ -44,8 +44,8 @@ variables={
   }
 
 
-nshape=nstation*nsnode*ntime*nfreq*ndir
-shape=(nstation,nsnode,ntime,nfreq,ndir)
+nshape=nsnode*ntime*nfreq*ndir
+shape=(nsnode,ntime,nfreq,ndir)
 
 spcgroup={
   "spectra":(np.arange(nshape,dtype="f8")).reshape(shape)
@@ -81,6 +81,14 @@ stations={
     "w_washn": 1
 }
 # Create lat lng for each station
-for i,id in enumerate(stations):
+isnode=0
+for i,vname in enumerate(stations):
   c=np.array([[1.0,1.0]])
-  stations[id]={"id":i,"nsnodes":stations[id],"latlng":((np.arange(stations[id])+1)*i)[:,np.newaxis]*c}
+  nsnodes=stations[vname]
+  sIndex=isnode
+  eIndex=isnode+nsnodes
+  latlon=np.zeros((nsnodes,2))
+  latlon[:,0]=i
+  latlon[:,1]=np.arange(nsnodes)
+  stations[vname]={"id":i,"nsnodes":nsnodes,"start":sIndex,"end":eIndex,"latlng":latlon,"featureid":np.zeros(nsnodes)+i}
+  isnode=isnode+nsnodes

@@ -97,12 +97,6 @@ class NetCDFSWAN(NetCDF2D):
     self.startDate = startDate=np.datetime64(startDate)
     self.datetime  = startDate+np.arange(ntime)*np.timedelta64(timeStep, 'h')
     
-    # Load Matlab name. 
-    # These are the keys inside the matlab files. 
-    # The keys are saved under BCSWANv5.variables.json
-    # mtname=info['metadata'].get('mtname')
-    # self.mtname = json.loads(mtname)
-    
     # Load station index table
     # Each station (.spc) file needs a specific Id
     # The ids are saved under BSCWANv5.stations.json
@@ -114,6 +108,7 @@ class NetCDFSWAN(NetCDF2D):
     variables=info['metadata'].get('mvariables')
     self.variables = json.loads(variables)
     
+    # Get the matlab variable name
     mtname={}
     for key in self.variables:
       variable=self.variables.get(key)
@@ -175,18 +170,9 @@ class NetCDFSWAN(NetCDF2D):
     # Keep variables since we need to extract "matlab name" keys
     variables={**f1,**f2}
     
-    
     # Store "matlab name" into a dictionnary
     temp={**variables,**f3} # Need to keep the spectra name
-    # mtname={}
-    # for key in temp:
-    #   variable=temp.get(key)
-    #   matname=variable.get("matfile name")
-    #   mtname[matname]=key
-    
-    # Need to store mtname and variables as string into nca
-    # obj['nca']['metadata']['mtname']=json.dumps(mtname) 
-    # obj['nca']['metadata']['mvariables']=json.dumps(list(variables.keys()))
+
     obj['nca']['metadata']['mvariables']=json.dumps(temp)
     
     # Get spectral stations metadata that contains the station name and id
@@ -233,11 +219,11 @@ class NetCDFSWAN(NetCDF2D):
     files=list(filter(lambda file:"year"in file and "month" in file and file["year"]==year and file["month"]==month and file['ext']=='.spc',files))
     
     files=sorted(files,key=lambda x:x["name"])
-    snodes={}
+    stations={}
     isnode=0
     for i,file in enumerate(files):
       nlatlng=NetCDFSWAN.load(file['path'],return_metadata=True)['nlatlng']    
-      snodes[file['name']]={"start":isnode,"end":isnode+nlatlng,"id":i}
+      stations[file['name']]={"start":isnode,"end":isnode+nlatlng,"id":i}
       isnode += nlatlng
     
     nsnode=isnode
@@ -245,8 +231,7 @@ class NetCDFSWAN(NetCDF2D):
       print("Number of stations:{}".format(len(files)))
       print("Number of station points: {}".format(nsnode))
     
-    # return {"stations":obj,"nstation":len(files),"nsnode":nsnode}
-    return {"stations":snodes,"nstation":len(files),"nsnode":nsnode}
+    return {"stations":stations,"nstation":len(files),"nsnode":nsnode}
     
   @staticmethod
   def getFiles(swanFolder):
@@ -521,7 +506,7 @@ class NetCDFSWAN(NetCDF2D):
       latlng=spc['latlng']
       self['snodes','slon',iIndex:eIndex]=latlng[:,0]
       self['snodes','slat',iIndex:eIndex]=latlng[:,1]
-      self['snodes','featureid',iIndex:eIndex]=np.zeros(eIndex-iIndex,dtype="int32")+id
+      self['snodes','stationid',iIndex:eIndex]=np.zeros(eIndex-iIndex,dtype="int32")+id
   
     for name in self.stations:
       id=self.stations[name]['id']

@@ -34,7 +34,7 @@
       "snodes":{"dimensions":["nsnode"],"variables":{
           "slat":{"type":"f8", "units":"degrees_north" ,"standard_name":"latitude" ,"long_name":"latitude"},
           "slon":{"type":"f8", "units":"degrees_east" ,"standard_name":"longitude" ,"long_name":"longitude"},
-          "featureid":{"type":"i4", "units":"" ,"standard_name":"Feature Id" ,"long_name":""}
+          "stationid":{"type":"i4", "units":"" ,"standard_name":"Feature Id" ,"long_name":""}
         }
       },        
       "freq":{"dimensions":["nfreq"],"variables":{

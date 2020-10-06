@@ -43,7 +43,7 @@ def test_NetCDFSWAN():
   np.testing.assert_array_equal(swan["dir","dir"], dir)
   np.testing.assert_array_equal(swan["snodes","slon",0:11], [0,1,2,3,4,5,6,6,7,7,8])
   np.testing.assert_array_equal(swan["snodes","slat",0:11], [0,0,0,0,0,0,0,1,0,1,0])
-  np.testing.assert_array_equal(swan["snodes","featureid",0:11], [0,1,2,3,4,5,6,6,7,7,8])
+  np.testing.assert_array_equal(swan["snodes","stationid",0:11], [0,1,2,3,4,5,6,6,7,7,8])
   np.testing.assert_array_equal(swan["stations","name",0:2], ["beverly","brooks"])
   
 

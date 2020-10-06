@@ -90,5 +90,5 @@ for i,vname in enumerate(stations):
   latlon=np.zeros((nsnodes,2))
   latlon[:,0]=i
   latlon[:,1]=np.arange(nsnodes)
-  stations[vname]={"id":i,"nsnodes":nsnodes,"start":sIndex,"end":eIndex,"latlng":latlon,"featureid":np.zeros(nsnodes)+i}
+  stations[vname]={"id":i,"nsnodes":nsnodes,"start":sIndex,"end":eIndex,"latlng":latlon,"stationid":np.zeros(nsnodes)+i}
   isnode=isnode+nsnodes

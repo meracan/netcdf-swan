@@ -510,7 +510,7 @@ class NetCDFSWAN(NetCDF2D):
     spcFiles=list(filter(lambda file:"year" in file and "month" in file and file["year"]==year and file["month"]==month and file['ext']=='.spc',_files)) # Get one output folder
     
     # Upldoad stations
-    for id,spcFile in enumerate(spcFiles):
+    for spcFile in spcFiles:
       name=spcFile['name']
       iIndex=self.stations[name]['start']
       eIndex=self.stations[name]['end']
@@ -574,7 +574,6 @@ class NetCDFSWAN(NetCDF2D):
     if groupName=="s" or groupName=="spc":
       uploadFiles=files
     elif groupName=="t":
-      # uploadFiles=list(range(int(np.ceil(self.nnode / self.gnode))))
       uploadFiles=list(filter(lambda name:name!="spectra",list(self.variables.keys())))
     else:
       raise Exception("Needs to be s,t,spc")
@@ -610,10 +609,8 @@ class NetCDFSWAN(NetCDF2D):
 
     _,groups=self.loadRemainingFilestoUpload(groupName)
     
-    
     pbar0=self.pbar0
     if pbar0 is not None: pbar0.reset(total=len(groups))
-    
     
     while groups:
       file=groups.pop(0)
@@ -632,11 +629,8 @@ class NetCDFSWAN(NetCDF2D):
         else:
           # Spectral file
           array=np.einsum("abcd->bacd",array) # Need to swap first and second axes
-          
           _sIndex=stations[file['name']]['start']
           _eIndex=stations[file['name']]['end']
-          # print(_sIndex,_eIndex,sIndex,eIndex)
-          # print()
           self[groupName,name,_sIndex:_eIndex,sIndex:eIndex]=array # Upload
       
       

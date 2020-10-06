@@ -30,8 +30,8 @@ def test_preparingFunctions():
 
 
 if __name__ == "__main__":
-  # test_getFiles()
-  # test_load()
-  # test_printInfo()
-  # test_getSpectralStationMetadata()
+  test_getFiles()
+  test_load()
+  test_printInfo()
+  test_getSpectralStationMetadata()
   test_preparingFunctions()

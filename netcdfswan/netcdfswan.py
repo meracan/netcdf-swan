@@ -600,6 +600,13 @@ class NetCDFSWAN(NetCDF2D):
     path=os.path.join(self.cacheLocation,self.name,groupName+".json")
     with open(path,"w") as f:json.dump(groups, f)
   
+  def addErrorFile(self,file):
+    """ Add file to the error json file.
+    """
+    self.errorlist.append(file['path'])
+    path = os.path.join(self.folder, "error_list.json")
+    with open(path,"w+") as f: f.write(self.errorlist)
+  
   def uploadS(self):
     self._uploadSpatial("s")
   def uploadSpc(self):
@@ -632,9 +639,7 @@ class NetCDFSWAN(NetCDF2D):
         _sub=NetCDFSWAN.load(file['path'],monthOnly=file['month']) # Load matlab or spc file
       except Exception as e:        
         if self.logger: self.logger.info("Couldn't upload {}. Check error_list.json".format(file['path']))
-        self.errorlist.append(file['path'])
-        path = os.path.join(self.folder, "error_list.json")
-        with open(path,"w+") as f: f.write(self.errorlist)
+        self.addErrorFile(file)
         if pbar0:pbar0.update(1)
         self.removeUploadedFile(groupName,groups)              
         continue      

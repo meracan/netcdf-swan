@@ -7,6 +7,8 @@ from netcdfswan import NetCDFSWAN
 from datetime import datetime,timedelta
 
 
+tmpFolder="../s3/swandata"
+
 def create_bot(filePath,array):
   np.savetxt(filePath, array, delimiter=' ')   
 
@@ -47,7 +49,7 @@ def create_spc(filePath,dic,station):
   dt=dic['datetime']
   spectra=dic['spectra']
   latlng=station['latlng']
-  stationId=station['id']
+
   with open(filePath,"w+") as f:
     f.write("SWAN   1                                Swan standard spectral file, version\n")
     f.write("$   Data produced by SWAN version 41.31    \n")
@@ -76,6 +78,22 @@ def create_spc(filePath,dic,station):
     f.write("m2/Hz/degr                              unit\n")
     f.write("-0.9900E+02                             exception value\n")
     
+    # ------- To test spinup, add extra date --------------
+    if dt[0].astype('datetime64[M]').astype(int) % 12 + 1==1:
+      _d = dt[0]-np.timedelta64(10,"D")
+      
+      dtStr=_d.astype(object).strftime("%Y%m%d.%H%M%S")
+      f.write("{}                         date and time\n".format(dtStr))
+      for inode,_ in enumerate(latlng):
+        # print(stationId,inode,i)
+        f.write("FACTOR\n")
+        factor=1
+        array=(spectra[inode,0]/factor).astype("i4")
+        
+        arrayStr = np.array2string(array,separator=',').replace(" ","").replace('[',"").replace(']',"").replace(","," ")
+        f.write("{}\n".format(factor))
+        f.write("{}\n".format(arrayStr))
+    # -------------------------------------------------------
     for i,_ in enumerate(dt):
       dtStr=_.astype(object).strftime("%Y%m%d.%H%M%S")
       f.write("{}                         date and time\n".format(dtStr))
@@ -83,7 +101,7 @@ def create_spc(filePath,dic,station):
         # print(stationId,inode,i)
         f.write("FACTOR\n")
         factor=1
-        array=(spectra[stationId,inode,i]/factor).astype("i4")
+        array=(spectra[inode,i]/factor).astype("i4")
         
         arrayStr = np.array2string(array,separator=',').replace(" ","").replace('[',"").replace(']',"").replace(","," ")
         f.write("{}\n".format(factor))
@@ -115,7 +133,7 @@ def create_folders(folder,year,month):
   return resultsFolder
 
 def create_data():
-  folder="./output"
+  folder=tmpFolder
   if not os.path.exists(folder):os.mkdir(folder)
   meshFolder=os.path.join(folder,"Mesh")
   if not os.path.exists(meshFolder):os.mkdir(meshFolder)
@@ -150,13 +168,16 @@ def create_data():
       
       for i,s in enumerate(stations):
         station=stations[s]
+        sIndex=station['start']
+        eIndex=station['end']
         nsnodes=station['nsnodes']
         dic={
             "datetime":dt,
             "freq":freq,
             "dir":dir,
-            "spectra":spcgroup['spectra'][:,:,startIndex:endIndex]
+            "spectra":spcgroup['spectra'][sIndex:eIndex,startIndex:endIndex]
         }
+        
         create_spc(os.path.join(resultsFolder,"{}.spc".format(s)),dic,station)
       for name in variables:
         variable=variables[name]
@@ -173,7 +194,7 @@ def check_data():
   for mkey in variables.keys():
     for mmkey in list(variables[mkey].keys()):
       for month in range(1, 13):
-        NCDFS = np.array(NetCDFSWAN.load(f'./output/2000/{str(month)}/results/{mkey}.mat')[mmkey])
+        NCDFS = np.array(NetCDFSWAN.load(os.path.join(tmpFolder,f'2000/{str(month)}/results/{mkey}.mat'))[mmkey])
         start = int(NCDFS[0][0]//10) # actual value is similar to the index
         end = start + NCDFS.shape[0]
         v = variables[mkey][mmkey][start: end]  # 0 - 745
@@ -185,7 +206,7 @@ def check_data():
     n = stations[station]["nsnodes"]
     sts = 0
     for month in range(1, 13):
-      NCDFS = NetCDFSWAN.load(f'./output/2000/{str(month)}/results/{station}.spc')["spectra"]
+      NCDFS = NetCDFSWAN.load(os.path.join(tmpFolder,f'2000/{str(month)}/results/{station}.spc'))["spectra"]
 
       ts = NCDFS.shape[0]
       spg = spcgroup["spectra"][i, :n]
@@ -201,5 +222,4 @@ def check_data():
         
 if __name__ == "__main__":
   create_data()
-  check_data()
-  
+  # check_data()

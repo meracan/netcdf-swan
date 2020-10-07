@@ -13,9 +13,9 @@ conda install pytest
 
 ## Testing
 ```bash
-python createData.py
-python test_static.py
-python test_netcdfswan.py
+python3 test/createData.py
+python3 test/test_static.py
+python3 test/test_netcdfswan.py
 ```
 Testing is recommended in the order above, with the creation of the "demo" data first.
 

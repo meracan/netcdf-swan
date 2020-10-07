@@ -1,6 +1,6 @@
 {
-  "name":"SWANv5",
-  "cacheLocation":"../../s3",
+  "name":"SWANv5a",
+  "cacheLocation":"../s3",
   "localOnly":false,
   "showProgress":true,
   "bucket":"uvic-bcwave",
@@ -9,9 +9,9 @@
       "title":"BCSWANv5",
       "startDate":"2004-01-01T00:00:00",
       "timeStep(h)":1,
-      "blacklist":["PTDIR", "PTDSPR", "PTHSIGN", "PTRTP", "PTSTEEP", "PTWLEN"]
+      "blacklist":["PTDIR", "PTDSPR", "PTHSIGN", "PTRTP", "PTSTEEP", "PTWLEN", "001"]
     },
-    "dimensions" : {"npe":3,"nelem":348364,"nnode":177945,"nstation":28,"nsnode":198,"ntime":130000,"nfreq":34,"ndir":36},
+    "dimensions" : {"npe":3,"nelem":348364,"nnode":177945,"nstation":28,"nchar":16,"nsnode":261,"ntime":130000,"nfreq":34,"ndir":36},
     "groups":{
       "elem":{"dimensions":["nelem","npe"],"variables":{
           "elem":{"type":"i4", "units":"" ,"standard_name":"elements" ,"long_name":"elements"}
@@ -27,11 +27,16 @@
           "bed":{"type":"f4", "units":"m" ,"standard_name":"Bathymetry" ,"long_name":"Bathymetry, m (CGVD28)"}
         }
       },
-      "stations":{"dimensions":["nstation","nsnode"],"variables":{
-          "slat":{"type":"f8", "units":"degrees_north" ,"standard_name":"latitude" ,"long_name":"latitude"},
-          "slon":{"type":"f8", "units":"degrees_east" ,"standard_name":"longitude" ,"long_name":"longitude"}
+      "stations":{"dimensions":["nstation","nchar"],"variables":{
+          "name":{"type":"S2", "units":"" ,"standard_name":"Name" ,"long_name":"Name"}
         }
-      },    
+      },
+      "snodes":{"dimensions":["nsnode"],"variables":{
+          "slat":{"type":"f8", "units":"degrees_north" ,"standard_name":"latitude" ,"long_name":"latitude"},
+          "slon":{"type":"f8", "units":"degrees_east" ,"standard_name":"longitude" ,"long_name":"longitude"},
+          "stationid":{"type":"i4", "units":"" ,"standard_name":"Station Id" ,"long_name":""}
+        }
+      },       
       "freq":{"dimensions":["nfreq"],"variables":{
           "freq":{"type":"f8", "units":"Hz" ,"standard_name":"absolute frequency" ,"long_name":"absolute frequencies in Hz"}
         }
@@ -42,7 +47,7 @@
       },      
       "s":{"dimensions":["ntime","nnode"],"variables":"BCSWANv5.variables.json"},
       "t":{"dimensions":["nnode","ntime"],"variables":"BCSWANv5.variables.json"},
-      "spc":{"dimensions":["nstation","nsnode","ntime","nfreq", "ndir"],"variables":"BCSWANv5.specvariables.json"}
+      "spc":{"dimensions":["nsnode","ntime","nfreq", "ndir"],"variables":"BCSWANv5.specvariables.json"}
     }
   }
 }

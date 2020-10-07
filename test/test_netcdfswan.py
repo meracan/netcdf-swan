@@ -7,10 +7,9 @@ from dataTest import elem,time,lat,lon,bed,slat,slon,freq,dir,spcgroup,variables
 
 
 def test_NetCDFSWAN_write():
-  swanFolder='./output'
-  jsonFile='./json/demo.json'
+  swanFolder="../s3/swandata"
+  jsonFile='./test/json/demo.json'
   input=NetCDFSWAN.prepareInputJSON(jsonFile,swanFolder,year=2000,month=1)
-  
   swan=NetCDFSWAN(input)
 
   # Write
@@ -24,10 +23,10 @@ def test_NetCDFSWAN():
 
   
   input={
-    "name":"test1",
+    "name":"swan-test1",
     "bucket":"uvic-bcwave",
-    "cacheLocation":"../../s3",
-    "localOnly":False
+    "cacheLocation":"../s3",
+    "localOnly":True
   }
   
   swan=NetCDFSWAN(input)
@@ -41,6 +40,11 @@ def test_NetCDFSWAN():
 
   np.testing.assert_array_equal(swan["freq","freq"], freq)
   np.testing.assert_array_equal(swan["dir","dir"], dir)
+  np.testing.assert_array_equal(swan["snodes","slon",0:11], [0,1,2,3,4,5,6,6,7,7,8])
+  np.testing.assert_array_equal(swan["snodes","slat",0:11], [0,0,0,0,0,0,0,1,0,1,0])
+  np.testing.assert_array_equal(swan["snodes","stationid",0:11], [0,1,2,3,4,5,6,6,7,7,8])
+  np.testing.assert_array_equal(swan["stations","name",0:2], ["beverly","brooks"])
+  
 
   np.testing.assert_array_equal(swan["s","u10"], variables['WIND']['Windv_x'])
   np.testing.assert_array_equal(swan["s","v10"], variables['WIND']['Windv_y'])
@@ -71,21 +75,14 @@ def test_NetCDFSWAN():
   np.testing.assert_array_equal(swan["t","transpx"], variables['TRANSP']['Transp_x'].T)
   np.testing.assert_array_equal(swan["t","transpy"], variables['TRANSP']['Transp_y'].T)
 
-  for i, station in enumerate(stations):
-    n = stations[station]["nsnodes"]
-    swn = swan["spc", "spectra", i, :n]
-    spg = spcgroup["spectra"][i, :n]
-    if n > 1:
-      for node in range(n):
-        swn_n = swn[node]
-        spg_n = spg[node]
-        np.testing.assert_array_equal(swn_n, spg_n)
-        print(f"station {station} node {node} match")
-    else:
-      spg_n = spg[0]
-      np.testing.assert_array_equal(swn, spg_n)
-      print(f"station {station} node 0 match")
-
+  for name in swan.stations:
+    
+    id = swan.stations[name]['id']
+    
+    sIndex=swan.stations[name]['start']
+    eIndex=swan.stations[name]['end']
+    np.testing.assert_array_equal(swan["spc", "spectra",sIndex:eIndex], spcgroup["spectra"][sIndex:eIndex])
+   
 
 def test_NetCDFSWAN_logger():
   logging.basicConfig(
@@ -96,8 +93,8 @@ def test_NetCDFSWAN_logger():
   logger = logging.getLogger()
   
   try:
-    swanFolder='./data'
-    jsonFile='./json/demo.json'
+    swanFolder="../s3/swandata"
+    jsonFile='./test/json/demo.json'
     input=NetCDFSWAN.prepareInputJSON(jsonFile,swanFolder,year=2000,month=1)
     swan=NetCDFSWAN(input,logger=logger)
     swan.uploadStatic()

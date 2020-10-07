@@ -1,7 +1,7 @@
 {
-  "name":"test1",
-  "cacheLocation":"../../s3",
-  "localOnly":false,
+  "name":"swan-test1",
+  "cacheLocation":"../s3",
+  "localOnly":true,
   "bucket":"uvic-bcwave",
   "gnode":1,
   "showProgress":true,
@@ -11,7 +11,7 @@
       "startDate":"2000-01-01T00:00:00",
       "timeStep(h)":1
     },
-    "dimensions" : {"npe":3,"nelem":20,"nnode":10,"nstation":27,"nsnode":3,"ntime":8760,"nfreq":3,"ndir":5},
+    "dimensions" : {"npe":3,"nelem":20,"nnode":10,"nstation":27,"nchar":16,"nsnode":32,"ntime":8760,"nfreq":3,"ndir":5},
     "groups":{
       "elem":{"dimensions":["nelem","npe"],"variables":{
           "elem":{"type":"i4", "units":"" ,"standard_name":"elements" ,"long_name":"elements"}
@@ -27,11 +27,16 @@
           "bed":{"type":"f4", "units":"m" ,"standard_name":"Bathymetry" ,"long_name":"Bathymetry, m (CGVD28)"}
         }
       },
-      "stations":{"dimensions":["nstation","nsnode"],"variables":{
-          "slat":{"type":"f8", "units":"degrees_north" ,"standard_name":"latitude" ,"long_name":"latitude"},
-          "slon":{"type":"f8", "units":"degrees_east" ,"standard_name":"longitude" ,"long_name":"longitude"}
+      "stations":{"dimensions":["nstation","nchar"],"variables":{
+          "name":{"type":"S2", "units":"" ,"standard_name":"Name" ,"long_name":"Name"}
         }
-      },    
+      },
+      "snodes":{"dimensions":["nsnode"],"variables":{
+          "slat":{"type":"f8", "units":"degrees_north" ,"standard_name":"latitude" ,"long_name":"latitude"},
+          "slon":{"type":"f8", "units":"degrees_east" ,"standard_name":"longitude" ,"long_name":"longitude"},
+          "stationid":{"type":"i4", "units":"" ,"standard_name":"Feature Id" ,"long_name":""}
+        }
+      },        
       "freq":{"dimensions":["nfreq"],"variables":{
           "freq":{"type":"f8", "units":"Hz" ,"standard_name":"absolute frequency" ,"long_name":"absolute frequencies in Hz"}
         }
@@ -42,7 +47,7 @@
       },      
       "s":{"dimensions":["ntime","nnode"],"variables":"demo.variables.json"},
       "t":{"dimensions":["nnode","ntime"],"variables":"demo.variables.json"},
-      "spc":{"dimensions":["nstation","nsnode","ntime","nfreq", "ndir"],"variables":"demo.spcvariables.json"}
+      "spc":{"dimensions":["nsnode","ntime","nfreq", "ndir"],"variables":"demo.spcvariables.json"}
     }
   }
 }

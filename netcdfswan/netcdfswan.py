@@ -97,12 +97,6 @@ class NetCDFSWAN(NetCDF2D):
     self.startDate = startDate=np.datetime64(startDate)
     self.datetime  = startDate+np.arange(ntime)*np.timedelta64(timeStep, 'h')
     
-    # Load Matlab name. 
-    # These are the keys inside the matlab files. 
-    # The keys are saved under BCSWANv5.variables.json
-    mtname=info['metadata'].get('mtname')
-    self.mtname = json.loads(mtname)
-    
     # Load station index table
     # Each station (.spc) file needs a specific Id
     # The ids are saved under BSCWANv5.stations.json
@@ -114,16 +108,19 @@ class NetCDFSWAN(NetCDF2D):
     variables=info['metadata'].get('mvariables')
     self.variables = json.loads(variables)
     
-    # Avoid certain files
-    self.blacklist=info['metadata'].get('blacklist') or []
-    
+    # Get the matlab variable name
+    mtname={}
+    for key in self.variables:
+      variable=self.variables.get(key)
+      matname=variable.get("matfile name")
+      mtname[matname]=key
+    self.mtname=mtname
+
     # Collect corrupted files. Read from json first, if available
-    path = os.path.join(self.folder, "error_list.json")
-    if os.path.isfile(path):
-      self.errorlist = json.load(open(path))
-    else:
-      json.dump([], open(path, "w+"))
-      self.errorlist = []
+    errorlistPath = os.path.join(self.folder, "error_list.json")
+    if not os.path.isfile(errorlistPath):json.dump([], open(errorlistPath, "w+"))
+    self.errorlist = json.load(open(errorlistPath))
+
     
     # Show progress bar
     self.showProgress=showProgress=obj.get("showProgress",False)
@@ -131,16 +128,17 @@ class NetCDFSWAN(NetCDF2D):
     if showProgress:
       try:
         from tqdm import tqdm
-        self.pbar0 = tqdm(total=1, position=0)
-        self.pbar = tqdm(total=1, position=1)
+        self.pbar0 = tqdm(total=1, position=1)
+        self.pbar = tqdm(total=1, position=0)
       except Exception as err:
         import warnings
         warnings.warn("tqdm does not exist")
     
-      
+    # Avoid certain files
+    self.blacklist=info['metadata'].get('blacklist',[])
     
     # Number of nodes to upload at a time
-    self.gnode = obj.get("gnode",50)
+    self.gnode = obj.get("gnode",1000)
  
   @property
   def matFiles(self):
@@ -158,7 +156,8 @@ class NetCDFSWAN(NetCDF2D):
     swanFolder=self.swanFolder
     if swanFolder is None:raise Exception("swanFolder was not specified")
     files = NetCDFSWAN.getFiles(swanFolder)
-    return list(filter(lambda file:file['ext']=='.spc',files))
+    files =list(filter(lambda file:file['ext']=='.spc',files))
+    return  list(sorted(files,key=lambda file:(file['year'],file['month'],file['name'])))
  
   @staticmethod
   def prepareInputJSON(file,swanFolder, **kwargs):
@@ -177,18 +176,10 @@ class NetCDFSWAN(NetCDF2D):
     # Keep variables since we need to extract "matlab name" keys
     variables={**f1,**f2}
     
-    
     # Store "matlab name" into a dictionnary
     temp={**variables,**f3} # Need to keep the spectra name
-    mtname={}
-    for key in temp:
-      variable=temp.get(key)
-      matname=variable.get("matfile name")
-      mtname[matname]=key
-    
-    # Need to store mtname and variables as string into nca
-    obj['nca']['metadata']['mtname']=json.dumps(mtname) 
-    obj['nca']['metadata']['mvariables']=json.dumps(list(variables.keys()))
+
+    obj['nca']['metadata']['mvariables']=json.dumps(temp)
     
     # Get spectral stations metadata that contains the station name and id
     meta=NetCDFSWAN.getSpectralStationMetadata(swanFolder, **kwargs)
@@ -234,18 +225,19 @@ class NetCDFSWAN(NetCDF2D):
     files=list(filter(lambda file:"year"in file and "month" in file and file["year"]==year and file["month"]==month and file['ext']=='.spc',files))
     
     files=sorted(files,key=lambda x:x["name"])
-    obj={}
-    nsnode=0
+    stations={}
+    isnode=0
     for i,file in enumerate(files):
-      obj[file['name']]=i
       nlatlng=NetCDFSWAN.load(file['path'],return_metadata=True)['nlatlng']    
-      nsnode=int(np.maximum(nsnode,nlatlng))
+      stations[file['name']]={"start":isnode,"end":isnode+nlatlng,"id":i}
+      isnode += nlatlng
     
+    nsnode=isnode
     if print_meta:
       print("Number of stations:{}".format(len(files)))
-      print("Maximum number of points in a given station:{}".format(nsnode))
+      print("Number of station points: {}".format(nsnode))
     
-    return {"stations":obj,"nstation":len(files),"nsnode":nsnode}
+    return {"stations":stations,"nstation":len(files),"nsnode":nsnode}
     
   @staticmethod
   def getFiles(swanFolder):
@@ -388,7 +380,7 @@ class NetCDFSWAN(NetCDF2D):
     return output
 
   @staticmethod
-  def loadSpc(filepath,return_metadata=False):
+  def loadSpc(filepath,return_metadata=False,monthOnly=None):
     """
     Aggregates all spc files (stored as .spc instead of .mat) for one month.
     Each datum in the block is multiplied with that block's FACTOR.
@@ -463,10 +455,12 @@ class NetCDFSWAN(NetCDF2D):
       data = True
       output=[]
       datetimes=[]
+      
       while data:
         token = line.split()[0]
         if re.match(re_spcdate, token):
-          datetimes.append(np.array(datetime(int(token[:4]), int(token[4:6]), int(token[6:8]), int(token[9:11])),dtype="datetime64[s]"))
+          year=int(token[:4]);month=int(token[4:6]);day=int(token[6:8]);hour=int(token[9:11])
+          date_time = np.array(datetime(year,month,day,hour),dtype="datetime64[s]")
           array=np.zeros((nlonlat,nfreq,ndir),dtype="f8")
           for i in range(nlonlat):
             FACTOR = s.readline().split()[0].strip()
@@ -475,7 +469,10 @@ class NetCDFSWAN(NetCDF2D):
             factor = s.readline().split()[0].strip()
             factor = float(factor)
             array[i]=np.array([np.array([float(int(d)*factor) for d in s.readline().split()]) for afreq in range(nfreq)])
-          output.append(array)
+          
+          if monthOnly and monthOnly==month:
+            datetimes.append(date_time)
+            output.append(array)
         else:
             raise Exception(f"date mismatch in load_spc(). reading from stopped")
         line = s.readline()  # ready next line
@@ -488,43 +485,65 @@ class NetCDFSWAN(NetCDF2D):
     """ Upload static files to S3 (.bot,.ele,.bot, datetime,etc...)
     """
     swanFolder=self.swanFolder
+    pbar0=self.pbar0
+    pbar=self.pbar
+    
+    
     if swanFolder is None:raise Exception("swanFolder was not specified")
     _files = NetCDFSWAN.getFiles(swanFolder)
+    spcFiles=list(filter(lambda file:"year" in file and "month" in file and file["year"]==year and file["month"]==month and file['ext']=='.spc',_files)) # Get one output folder
+    
+    if pbar0: pbar0.reset(total=5+1+1+2)
+    
+    def update(name):
+      if pbar0: pbar0.set_description(name);pbar0.update(1)
+    
+    def update1(name):
+      if pbar: pbar.set_description(name);pbar.update(1)
 
     files=list(filter(lambda file:not "year"in file,_files))
     _bot = list(filter(lambda file:file['ext']==".bot",files))
     _node = list(filter(lambda file:file['ext']==".node",files))
     _ele = list(filter(lambda file:file['ext']==".ele",files))
      
-    if len(_bot)>0:self['nodes','bed']=NetCDFSWAN.load(_bot[0]['path'])
-    if len(_ele)>0:self['elem','elem']=NetCDFSWAN.load(_ele[0]['path'])  
+    if len(_bot)>0:self['nodes','bed']=NetCDFSWAN.load(_bot[0]['path']);update("nodes")
+    if len(_ele)>0:self['elem','elem']=NetCDFSWAN.load(_ele[0]['path']);update("elem")
+    
     if len(_node)>0:
       xy=NetCDFSWAN.load(_node[0]['path'])  
-      self['nodes','lon']=xy[:,0]
-      self['nodes','lat']=xy[:,1]
+      self['nodes','lon']=xy[:,0];update("lon")
+      self['nodes','lat']=xy[:,1];update("lat")
     
     # Upldoad datetime
-    self['time','time']=self.datetime
+    self['time','time']=self.datetime;update("time")
     
-    spcFiles=list(filter(lambda file:"year" in file and "month" in file and file["year"]==year and file["month"]==month and file['ext']=='.spc',_files)) # Get one output folder
-    
+    if pbar: pbar.reset(total=len(spcFiles))
     # Upldoad stations
     for spcFile in spcFiles:
       name=spcFile['name']
-      id=self.stations[name] # Need station id since it's used in nca
+      iIndex=self.stations[name]['start']
+      eIndex=self.stations[name]['end']
+      id=self.stations[name]['id']
+      
       spc=NetCDFSWAN.load(spcFile['path'],return_metadata=True)
-      nlatlng=spc['nlatlng']
+      
       latlng=spc['latlng']
-      self['stations','slon',id,:nlatlng]=latlng[:,0]
-      self['stations','slat',id,:nlatlng]=latlng[:,1]
-
-
+      self['snodes','slon',iIndex:eIndex]=latlng[:,0]
+      self['snodes','slat',iIndex:eIndex]=latlng[:,1]
+      self['snodes','stationid',iIndex:eIndex]=np.zeros(eIndex-iIndex,dtype="int32")+id
+      update1(name)
+    update('spc')
+  
+    if pbar: pbar.reset(total=len(self.stations.keys()))
+    for name in self.stations:
+      id=self.stations[name]['id']
+      self['stations','name',id]=name
+      update1(name)
+    update('stations')
     # Add freq and dir
-    self['freq','freq']=spc['freq']
-    self['dir','dir']=spc['dir']
-    
-    if self.pbar0: self.pbar0.update(1)
-    if self.pbar: self.pbar.update(1)
+    self['freq','freq']=spc['freq'];update("freq")
+    self['dir','dir']=spc['dir'];update("dir")
+
     
 
   def getDatetimeIndex(self,dt):
@@ -566,7 +585,7 @@ class NetCDFSWAN(NetCDF2D):
     if groupName=="s" or groupName=="spc":
       uploadFiles=files
     elif groupName=="t":
-      uploadFiles=list(range(int(np.ceil(self.nnode / self.gnode))))
+      uploadFiles=list(filter(lambda name:name!="spectra",list(self.variables.keys())))
     else:
       raise Exception("Needs to be s,t,spc")
     
@@ -596,32 +615,30 @@ class NetCDFSWAN(NetCDF2D):
     """
     showProgress=self.showProgress
     mtname=self.mtname
+    variables=self.variables
     stations=self.stations
+
     _,groups=self.loadRemainingFilestoUpload(groupName)
-    
     
     pbar0=self.pbar0
     if pbar0 is not None: pbar0.reset(total=len(groups))
     
-    
     while groups:
       file=groups.pop(0)
       if pbar0: pbar0.set_description(file['name'])
-      
+      if self.logger:self.logger.info("Uploading {}".format(file['path']))      
+
       try:
-        _sub=NetCDFSWAN.load(file['path']) # Load matlab or spc file
-      except Exception as e:
-        _e = type(e).__name__
-        self.errorlist.append(file)
+        _sub=NetCDFSWAN.load(file['path'],monthOnly=file['month']) # Load matlab or spc file
+      except Exception as e:        
+        if self.logger: self.logger.info("Couldn't upload {}. Check error_list.json".format(file['path']))
+        self.errorlist.append(file['path'])
         path = os.path.join(self.folder, "error_list.json")
         with open(path,"w+") as f: f.write(self.errorlist)
         if pbar0:pbar0.update(1)
-        self.removeUploadedFile(groupName,groups)
+        self.removeUploadedFile(groupName,groups)              
+        continue      
         
-        if self.logger: self.logger.info("{}: Couldn't upload {}. Check error_list.json".format(_e, file['path']))
-        continue
-      
-      if self.logger:self.logger.info("Uploading {}".format(file['path']))
       dt=_sub.pop("datetime") # Remove datetime from dict since we don't want to upload this
       sIndex,eIndex=self.getDatetimeIndex(dt) # Get datetime index
       
@@ -632,19 +649,14 @@ class NetCDFSWAN(NetCDF2D):
           self[groupName,name,sIndex:eIndex]=array #upload
         else:
           # Spectral file
-         
           array=np.einsum("abcd->bacd",array) # Need to swap first and second axes
-          stationId= stations.get(file['name'])
-          _nodesperstation=array.shape[0]
-          self[groupName,name,stationId,:_nodesperstation,sIndex:eIndex]=array # Upload
-      
+          _sIndex=stations[file['name']]['start']
+          _eIndex=stations[file['name']]['end']
+          self[groupName,name,_sIndex:_eIndex,sIndex:eIndex]=array # Upload
       
       if pbar0:pbar0.update(1)
       self.removeUploadedFile(groupName,groups)
-    
-    # if pbar0:
-    #   pbar0.close()
-    #   self.pbar.close()
+
   
   def _uploadTemporal(self,groupName):
     """ Upload Temporal results
@@ -654,12 +666,12 @@ class NetCDFSWAN(NetCDF2D):
         Upload for each variable
     """
     showProgress=self.showProgress
-    mtname=self.mtname
+    # mtname=self.mtname
     nnode=self.nnode
     gnode=self.gnode
     ntime=self.ntime
     variables=self.variables
-    
+
     files,groups=self.loadRemainingFilestoUpload(groupName)
     
     pbar=self.pbar
@@ -667,37 +679,36 @@ class NetCDFSWAN(NetCDF2D):
     if pbar0 is not None: pbar0.reset(total=len(groups))
     
     while groups:
-      i=groups.pop(0)
-      if self.logger is not None:self.logger.info("Uploading group {}".format(i))
-      inodeStart=i*gnode
-      inodeEnd=np.minimum((i+1)*gnode,nnode)
-      nnodeGroup=inodeEnd-inodeStart
+      vname=groups.pop(0)
+      if pbar0: pbar0.set_description(vname)
+      if self.logger is not None:self.logger.info("Uploading group {}".format(vname))
+      filename=os.path.join(self.cacheLocation,vname+".dat")
+      
+      variable=variables[vname]
+      fileKey=variable["fileKey"]
+      _files=list(filter(lambda file:file['name']==fileKey,files))
       
       # Initialize array
-      groupArray={}
-      for name in variables:
-        groupArray[name]=np.zeros((nnodeGroup,ntime))
+      fp = np.memmap(filename, dtype='float32', mode='w+', shape=(nnode,ntime))
       
-      if pbar is not None: pbar.reset(total=len(files))
+      if pbar is not None: pbar.reset(total=len(_files))
       # Save matlab info to array
-      for _,file in enumerate(files):
+      for _,file in enumerate(_files):
         _sub=NetCDFSWAN.load(file['path'])
         dt=_sub.pop("datetime")
         sIndex,eIndex=self.getDatetimeIndex(dt)
-        
         for key in _sub:
-          array=_sub[key]
-          name=mtname[key]
-          groupArray[name][:,sIndex:eIndex]=array[:,inodeStart:inodeEnd].T
+          if key==variable['matfile name']:
+            array=_sub[key]
+            fp[:,sIndex:eIndex]=array.T
         if pbar:pbar.update(1)
+      
       # Save array in memory to S3
-      for name in groupArray:
-        array=groupArray[name]
-        self[groupName,name,inodeStart:inodeEnd]=array
+      for i in np.arange(0,nnode,gnode):
+        _slice=slice(i,np.minimum(nnode,i+gnode))
+        self[groupName,vname,_slice]=fp[_slice]
       
       if pbar0:pbar0.update(1)
       self.removeUploadedFile(groupName,groups)
-      
-    # if pbar0:
-    #   pbar0.close()
-    #   pbar.close()
+
+      os.remove(filename)

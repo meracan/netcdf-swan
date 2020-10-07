@@ -3,10 +3,8 @@ import json
 from netcdfswan import NetCDFSWAN
 import numpy as np
 import logging
-
-
-
 from dataTest import elem,time,lat,lon,bed,slat,slon,freq,dir,spcgroup,variables, stations
+
 
 def test_NetCDFSWAN_write():
   swanFolder="../s3/swandata"
@@ -19,6 +17,7 @@ def test_NetCDFSWAN_write():
   swan.uploadS()
   swan.uploadT()
   swan.uploadSpc()
+
 
 def test_NetCDFSWAN():
 

@@ -115,6 +115,12 @@ class NetCDFSWAN(NetCDF2D):
       matname=variable.get("matfile name")
       mtname[matname]=key
     self.mtname=mtname
+
+    # Collect corrupted files. Read from json first, if available
+    errorlistPath = os.path.join(self.folder, "error_list.json")
+    if not os.path.isfile(errorlistPath):json.dump([], open(errorlistPath, "w+"))
+    self.errorlist = json.load(open(errorlistPath))
+
     
     # Show progress bar
     self.showProgress=showProgress=obj.get("showProgress",False)
@@ -620,10 +626,20 @@ class NetCDFSWAN(NetCDF2D):
     while groups:
       file=groups.pop(0)
       if pbar0: pbar0.set_description(file['name'])
-      if self.logger:self.logger.info("Uploading {}".format(file['path']))
-      
-      _sub=NetCDFSWAN.load(file['path'],monthOnly=file['month']) # Load matlab or spc file
-      dt=_sub.pop("datetime")# Remove datetime from dict since we don't want to upload this
+      if self.logger:self.logger.info("Uploading {}".format(file['path']))      
+
+      try:
+        _sub=NetCDFSWAN.load(file['path'],monthOnly=file['month']) # Load matlab or spc file
+      except Exception as e:        
+        if self.logger: self.logger.info("Couldn't upload {}. Check error_list.json".format(file['path']))
+        self.errorlist.append(file['path'])
+        path = os.path.join(self.folder, "error_list.json")
+        with open(path,"w+") as f: f.write(self.errorlist)
+        if pbar0:pbar0.update(1)
+        self.removeUploadedFile(groupName,groups)              
+        continue      
+        
+      dt=_sub.pop("datetime") # Remove datetime from dict since we don't want to upload this
       sIndex,eIndex=self.getDatetimeIndex(dt) # Get datetime index
       
       for key in _sub: # Loop for each variable(e.g Windv_x and Windv_y)
@@ -637,7 +653,6 @@ class NetCDFSWAN(NetCDF2D):
           _sIndex=stations[file['name']]['start']
           _eIndex=stations[file['name']]['end']
           self[groupName,name,_sIndex:_eIndex,sIndex:eIndex]=array # Upload
-      
       
       if pbar0:pbar0.update(1)
       self.removeUploadedFile(groupName,groups)
@@ -695,4 +710,5 @@ class NetCDFSWAN(NetCDF2D):
       
       if pbar0:pbar0.update(1)
       self.removeUploadedFile(groupName,groups)
+
       os.remove(filename)

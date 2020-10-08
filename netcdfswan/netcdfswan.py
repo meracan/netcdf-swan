@@ -586,6 +586,7 @@ class NetCDFSWAN(NetCDF2D):
       uploadFiles=files
     elif groupName=="t":
       uploadFiles=list(filter(lambda name:name!="spectra",list(self.variables.keys())))
+      files=filter(lambda file: file['path'] not in self.errorlist,files) # To remove files with errors
     else:
       raise Exception("Needs to be s,t,spc")
     
@@ -687,6 +688,7 @@ class NetCDFSWAN(NetCDF2D):
       vname=groups.pop(0)
       if pbar0: pbar0.set_description(vname)
       if self.logger is not None:self.logger.info("Uploading group {}".format(vname))
+      
       filename=os.path.join(self.cacheLocation,vname+".dat")
       
       variable=variables[vname]

@@ -14,22 +14,23 @@ data_location = ?
 # constants
 u, c = "hours since 1970-01-01 00:00:00.0", "gregorian"
 tSTART = int(date2num(datetime(2004,1,1,0,0), units=u, calendar=c))  
-num_stations_to_test = 5
-num_timesteps_to_test = 7
-
+num_stations_to_test = 13
+num_timesteps_to_test = 3
+  
+# create input json object. inputFile path depends where this script is run
+#inputFile = "./BCSWANv5.json"
+inputFile = "./netcdf-swan/BCSWANv5/BCSWANv5.json" # set localOnly to False
+with open(inputFile, "r") as f:
+  inputJson = json.load(f)
+inputJson["showProgress"] = False
+  
 def test_uvicswan_mat():
   global num_timesteps_to_test
-  
-  # create input json object (needs nca object)
-  inputFile = "./BCSWANv5.json"
-  with open(inputFile, "r") as f:
-    inputJson = json.load(f)
-  inputJson["showProgress"] = False
   
   # load from s3 bucket
   swan = NetCDFSWAN(inputJson)
   
-  # trial list.
+  # trial list. Only chooses a few of them
   mats = {
     "u10":("WIND", "Windv_x"),
     "v10":("WIND", "Windv_y"),
@@ -49,13 +50,13 @@ def test_uvicswan_mat():
       t = int(date2num(datetime(y,m,d,h,0), units=u, calendar=c)) - tSTART
       dateprint = num2date(t+tSTART, units=u, calendar=c)
       
-      mfilepath = data_location + str(y)+"/"+f"{m:02d}"+"/results/"+mVAR+".mat"
+      mfilepath = data_location +"/"+ str(y)+"/"+f"{m:02d}"+"/results/"+mVAR+".mat"
       try: matdata = loadmat(mfilepath)
       except: print(f"couldnt read {mfilepath}"); continue
       
       key = mvar+"_"+str(y)+f"{m:02d}"+f"{d:02d}"+"_"+f"{h:02d}"+"0000"
       local_nodes = matdata[key][0]
-      rmote_nodes = swan["s", var, t]
+      rmote_nodes = swan["s", var, t][0]
       
       np.testing.assert_array_equal(local_nodes, rmote_nodes)
       print(f"{key} {dateprint} OK")
@@ -64,22 +65,19 @@ def test_uvicswan_mat():
 def test_uvicswan_spc():
   global num_stations_to_test, num_timesteps_to_test
   
-  # create input json object
-  inputFile = "./BCSWANv5.json" # set localOnly to False
-  with open(inputFile, "r") as f:
-    inputJson = json.load(f)
-  inputJson["showProgress"] = False
-
   # load from s3 bucket
   swan = NetCDFSWAN(inputJson)
-  stns = json.loads(swan.info()["metadata"]["stations"])
   
-  for s in stns.items():
+  stations = json.loads(swan.info()["metadata"]["stations"])
+  
+  # check stations
+  for station_name, values in stations.items():
     if num_stations_to_test <= 0: break
     num_stations_to_test -= 1
-
-    filename, i = s[0]+".spc", s[1]
-
+    
+    s = random.randrange(values["start"], values["end"])
+    s_offset = s-values["start"] # may get snode in the "middle" of the original file
+    
     # create random timesteps to check 
     for rndt in range(num_timesteps_to_test):
       y = random.randrange(2004, 2017)
@@ -87,21 +85,26 @@ def test_uvicswan_spc():
       d = random.randrange(1, 29)
       h = random.randrange(0, 24)
       t = int(date2num(datetime(y,m,d,h,0), units=u, calendar=c)) - tSTART
-      t_offset = t - int(date2num(datetime(y,m,1,0,0), units=u, calendar=c)) + tSTART
+      t_offset = t - int(date2num(datetime(y,m,1,0,0), units=u, calendar=c)) + tSTART # 0-744, because cyclical every month folder
+      
+      # For the .mat files above, the time index is specified in the name of the key-string, so getting the data is straightforward.
+      # But to get the timestep (t) in the .spc file we need to find the t_offset, which is relative to the start time of the .spc file. 
+      
       dateprint = num2date(t+tSTART, units=u, calendar=c)
-      mfilepath = data_location + str(y)+"/"+f"{m:02d}"+"/results/"+filename
       
-      spcdata = swan.loadSpc(mfilepath)
-      spc = spcdata["spectra"]
+      sfilepath = data_location+"/"+str(y)+"/"+f"{m:02d}"+"/results/"+station_name+".spc"
+      try: spcdata = swan.loadSpc(sfilepath, monthOnly=m)["spectra"]
+      except: print(f"couldnt read {sfilepath}"); continue
       
-      # ------- just use first node in station ---------
-      data_local = spc[t_offset, 0, :, :]
-      data_rmote = swan.query({"group":"spc","variable":"spectra","station":i,"time":t,"snode":0})
+      local_snodes = spcdata[t_offset, s_offset, :, :] # time, nodes, frequency, direction
+      rmote_snodes = swan["spc", "spectra", s, t][0][0] # otherwise we get [[[ data ]]]
+      
       try:
-        np.testing.assert_array_equal(data_local, data_rmote)
-        print(f"station {s[0]} {dateprint}  OK")
+        np.testing.assert_array_equal(local_snodes, rmote_snodes)
+        print(f"snode {s} (offset={s_offset}) - {station_name} at {dateprint}. local file shape={spcdata.shape}  t={t} (offset={t_offset})  OK")
       except AssertionError as ae:
-        print(f"station {s[0]} {dateprint} does NOT match bucket data:\n{ae}")
+        print(f"snode {s} (offset={s_offset}) - {station_name} at {dateprint}. local file shape={spcdata.shape}  t={t} (offset={t_offset}) does NOT match bucket data")
+      
   
 if __name__ == "__main__":
   test_uvicswan_mat()

@@ -13,10 +13,10 @@ def test_NetCDFSWAN_write():
   swan=NetCDFSWAN(input)
 
   # Write
-  swan.uploadStatic(year=2000)
+  # swan.uploadStatic(year=2000)
   swan.uploadS()
   swan.uploadT()
-  swan.uploadSpc()
+  # swan.uploadSpc()
 
 
 def test_NetCDFSWAN():

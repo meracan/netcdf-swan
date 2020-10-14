@@ -9,7 +9,10 @@
     "metadata":{
       "title":"BCSWANv5",
       "startDate":"2000-01-01T00:00:00",
-      "timeStep(h)":1
+      "timeStep(h)":1,
+      "spatial":{"x":"lon","y":"lat","elem":"elem"},
+      "temporal":{"time":"time"},
+      "spectral":{"sx":"slon","sy":"slat"}     
     },
     "dimensions" : {"npe":3,"nelem":20,"nnode":10,"nstation":27,"nchar":16,"nsnode":32,"ntime":8760,"nfreq":3,"ndir":5},
     "groups":{

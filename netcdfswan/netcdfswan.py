@@ -101,12 +101,12 @@ class NetCDFSWAN(NetCDF2D):
     # Each station (.spc) file needs a specific Id
     # The ids are saved under BSCWANv5.stations.json
     stations=info['metadata'].get('stations')
-    self.stations = json.loads(stations)    
+    self.stations = stations    
     
     # Load variables for matlab output
     # This contains an array of all variables and only used to save the temporal axis data
     variables=info['metadata'].get('mvariables')
-    self.variables = json.loads(variables)
+    self.variables = variables
     
     # Get the matlab variable name
     mtname={}
@@ -179,12 +179,12 @@ class NetCDFSWAN(NetCDF2D):
     # Store "matlab name" into a dictionnary
     temp={**variables,**f3} # Need to keep the spectra name
 
-    obj['nca']['metadata']['mvariables']=json.dumps(temp)
+    obj['nca']['metadata']['mvariables']=temp
     
     # Get spectral stations metadata that contains the station name and id
     meta=NetCDFSWAN.getSpectralStationMetadata(swanFolder, **kwargs)
 
-    obj['nca']['metadata']['stations']=json.dumps(meta['stations'])
+    obj['nca']['metadata']['stations']=meta['stations']
     
     if obj['nca']['dimensions']['nsnode']!=meta['nsnode']:
       raise Exception("Please check nsnode in json file. {} to {}".format(obj['nca']['dimensions']['nsnode'],meta['nsnode']))
@@ -586,7 +586,7 @@ class NetCDFSWAN(NetCDF2D):
       uploadFiles=files
     elif groupName=="t":
       uploadFiles=list(filter(lambda name:name!="spectra",list(self.variables.keys())))
-      files=filter(lambda file: file['path'] not in self.errorlist,files) # To remove files with errors
+      files=list(filter(lambda file: file['path'] not in self.errorlist,files)) # To remove files with errors
     else:
       raise Exception("Needs to be s,t,spc")
     
@@ -679,7 +679,7 @@ class NetCDFSWAN(NetCDF2D):
     variables=self.variables
 
     files,groups=self.loadRemainingFilestoUpload(groupName)
-    
+
     pbar=self.pbar
     pbar0=self.pbar0
     if pbar0 is not None: pbar0.reset(total=len(groups))

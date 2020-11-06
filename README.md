@@ -66,20 +66,49 @@ print(swan['spc','spectra',0])
 
 	
 #### Variables
-Swan results has stored... 
 
-{variable}
-- hs
-- tp
-- etc
+The SWAN data stored on S3 is organized into several groups, where each group has one or more variables:
 
-`swan['s',{variable},{timestep}]`
+Static data (**group** - _variables_):
+- **elem**  - _elem_ 
+- **nodes** - _lat, lon, bed_
+- **snodes** - _slat, slon, stationid_
+- **stations** - _name_
+- **freq** - _freq_
+- **dir** - _dir_
+- **time** - _time_
 
-`swan['t',{variable},{nodeId}]`
+Spatial/Temporal data:
+- **s**/**t** - _hs, tps, tmm10, tm01, tm02, pdir, dir, dspr, qp, u10, v10, transpx, transpy_
 
-`swan['spc',{variable},{stationId}]`
+Spectra data:
+- **spc** - _spectra_
 
-**Station Id**
+Values from the SWAN data are accessed via the group name, the name of a variable from that group, and an index or range of indices:
+
+swan['s', {variable}, {timestep}, {nodeId}]
+
+swan['t', {variable}, {nodeId}, {timestep}]
+
+swan['spc', {variable}, {snodeId}, {timestep}, {freq}, {dir}]
+
+examples: 
+
+`swan['s', 'transpy', 20]`  y-component of energy transfer for all timesteps at node 20
+
+`swan['s', 'hs', 0:2, 62083]`  significant wave height for first two timesteps at node 62083
+
+`swan['s', 'hs', :, :4]`  all timesteps for first 4 nodes
+
+`swan['t', 'hs', 62083, 0]`  significant wave height at node 62083 for first timestep
+
+`swan['spc', 'spectra', 260, 5000]`  time index 5000 at last spectra node
+
+`swan['spc', 'spectra', 260, 0, :, 35]`  last spectra node for first timestep, all frequencies but only the last nautical direction (index 35)
+
+`swan['nodes', 'lat']`  all latitudes
+
+`swan['stations', 'name']`  names of all spectra node stations
 
 
 

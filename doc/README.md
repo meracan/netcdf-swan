@@ -1,10 +1,11 @@
 # UVIC-BCSWAN API Documentation
+## NetCDFSWAN
+ 
+The NetCDFSWAN python package reads and stores SWAN results (third-generation wave model) from/to AWS S3 using the netcdf file format.
+
 ## Methodology
 
-For each file in the SWAN dataset, NetCDFSWAN will store the file's contents, 
-then create a NetCDF2D object to automatically partition the NodeMap data into one .nca file and multiple .nc files, 
-which are stored in a local cache, beside the SWAN dataset. 
-The NetCDF2D object then acts as a 'vehicle' to transport the cache contents to and from the Amazon S3 bucket:
+NetCDFSWAN is a wrapper for the s3-netcdf package. NetCDFSWAN reads files from a SWAN dataset and uses s3-netcdf to create and store the data into partitioned netcdf (.nc) files into a local cache, then take whatever is in the cache and upload those contents to an Amazon S3 bucket: 
 
 ```                                                                     
                                                                 ┐       ┌───> s3 Cloud
@@ -18,11 +19,17 @@ The NetCDF2D object then acts as a 'vehicle' to transport the cache contents to 
 SWAN data                                       local cache
 ```
 
-For the script to work, a temporally sorted folder structure is assumed for the data, with one 'Mesh' folder plus multiple year folders. 
+A single master file (.nca) will contain the variable definitions, metadata and indices, and acts as a reference for the data arrays which are stored in the child files (.nc). These files are stored in a local cache, beside the SWAN dataset. 
+
+NetCDFSWAN interprets the SWAN data as having two types: "static" data, which includes coordinate data such as timesteps, latitudes, longitudes, bathymetry, and other triangular mesh information, and "spatial" data, which consists of results from the SWAN model, stored in MATLAB files (.mat) and spectra files (ASCII/text).
+
+For each .mat or .spc file in the SWAN dataset, NetCDFSWAN will read its contents and hold the data in a temporary NetCDF2D object as it gets partitioned.
+The NetCDF2D object will then also act as the 'vehicle' to transport the cache contents to and from the Amazon S3 bucket.
+
+A temporally-sorted folder structure is assumed for the SWAN dataset, with one 'Mesh' folder (coordinate information for the nodes) plus multiple year folders. 
 Each year folder contains 12 month folders. 
-Each month folder has a 'results' folder, which contains all of the variable data, 
-in the form of Matlab (.mat) and spectra (.spc) files, that is associated with the 
-nodes and their coordinate information (the 'mesh' or 'grid'):
+Each month folder has a 'results' folder, which contains all of the variable data associated with the 
+spatial and spectra nodes:
 
 ```
 |
@@ -66,14 +73,8 @@ nodes and their coordinate information (the 'mesh' or 'grid'):
         └-- .node
 ```
 Ideally, netcdf-swan can be placed beside the data folder ("SWAN_DATA"), 
-but the path to the data will be contained in an 'input' json object when reading/writing to s3 (see below).
+but the path to the data will be referenced in an 'input' json object when reading/writing to s3 (see below).
 
-## NetCDFSWAN
-
-The NetCDFSWAN class acts as a sort of 'hub' or temporary storage space to hold all of the static grid and meta data 
-from a single .mat or .spc file as nc files are being created, and provides some useful methods for plotting, etc. 
-(work in progress...) 
-The grid data includes coordinate data such as timesteps, latitudes, longitudes, bathymetry, and other triangular mesh information.
 
 ## Basic writing usage
 

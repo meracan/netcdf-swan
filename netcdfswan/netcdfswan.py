@@ -90,6 +90,7 @@ class NetCDFSWAN(NetCDF2D):
     self.ntime  = ntime = info['dimensions'].get('ntime')
     self.nnode  = info['dimensions'].get('nnode')
     self.nsnode = info['dimensions'].get('nsnode')
+    self.npart = info['dimensions'].get('npart')
     
     # Initialize datetime array for the entire simulation
     startDate = info['metadata'].get('startDate')
@@ -115,6 +116,11 @@ class NetCDFSWAN(NetCDF2D):
       matname=variable.get("matfile name")
       mtname[matname]=key
     self.mtname=mtname
+    
+    # Combine matfile names and variables of partition files
+    pt_gvar = set(info['groups']['pt']['variables'].keys())
+    pt_intr = list(set(dict(variables.items()).keys()).intersection(pt_gvar))
+    self.ptList = [v["fileKey"] for k,v in variables.items() if k in pt_gvar] + pt_intr
 
     # Collect corrupted files. Read from json first, if available
     errorlistPath = os.path.join(self.folder, "error_list.json")
@@ -172,12 +178,14 @@ class NetCDFSWAN(NetCDF2D):
     obj["nca"]['groups']['s']['variables']=f1=NetCDFSWAN.load(os.path.join(jsonFolder,obj["nca"]['groups']['s']['variables']))
     obj["nca"]['groups']['t']['variables']=f2=NetCDFSWAN.load(os.path.join(jsonFolder,obj["nca"]['groups']['t']['variables']))
     obj["nca"]['groups']['spc']['variables']=f3=NetCDFSWAN.load(os.path.join(jsonFolder,obj["nca"]['groups']['spc']['variables']))
+    obj["nca"]['groups']['pt']['variables']=f4=NetCDFSWAN.load(os.path.join(jsonFolder,obj["nca"]['groups']['pt']['variables']))
     
     # Keep variables since we need to extract "matlab name" keys
     variables={**f1,**f2}
     
     # Store "matlab name" into a dictionnary
-    temp={**variables,**f3} # Need to keep the spectra name
+    temp_={**variables,**f3} # Need to keep the spectra name
+    temp={**temp_, **f4} # partition variable names
 
     obj['nca']['metadata']['mvariables']=temp
     
@@ -565,8 +573,8 @@ class NetCDFSWAN(NetCDF2D):
     The "uploadFiles" will be grouped using gnode=50
     """
     
-    # Get appropriate files (.mat or .spc) for each group ("s","t","spc")
-    if groupName=="s" or groupName=="t":
+    # Get appropriate files (.mat or .spc) for each group ("s","t","spc", "pt")
+    if groupName in ["s", "t", "pt"]:
       files=self.matFiles
     elif groupName=="spc":
       files=self.spcFiles
@@ -580,15 +588,20 @@ class NetCDFSWAN(NetCDF2D):
       uploadFiles=NetCDFSWAN.load(path)
       return files,uploadFiles
     
-    # If json file does not exist, create the group/uploadfiles
+    # If json file does not exist, create the group/uploadFiles
     # Initialize groups
-    if groupName=="s" or groupName=="spc":
+    if groupName=="spc":
       uploadFiles=files
+    elif groupName=="s":
+      uploadFiles=list(filter(lambda file: file['name'] not in self.ptList, files))
     elif groupName=="t":
-      uploadFiles=list(filter(lambda name:name!="spectra",list(self.variables.keys())))
-      files=list(filter(lambda file: file['path'] not in self.errorlist,files)) # To remove files with errors
+      uploadFiles=list(filter(lambda name: name!="spectra" and name not in self.ptList, list(self.variables.keys())))
+      files=list(filter(lambda file: file['path'] not in self.errorlist, files)) # To remove files with errors
+    elif groupName=="pt":
+      uploadFiles=list(filter(lambda name: name in self.ptList, list(self.variables.keys())))
+      files=list(filter(lambda file: file['path'] not in self.errorlist, files)) # To remove files with errors
     else:
-      raise Exception("Needs to be s,t,spc")
+      raise Exception("Needs to be s,t,spc,pt")
     
     with open(path,"w+") as f:json.dump(uploadFiles, f)
       
@@ -614,6 +627,8 @@ class NetCDFSWAN(NetCDF2D):
     self._uploadSpatial("spc")
   def uploadT(self):
     self._uploadTemporal("t")
+  def uploadPt(self):
+    self._uploadPartition("pt")
   
     
   def _uploadSpatial(self,groupName):
@@ -715,6 +730,70 @@ class NetCDFSWAN(NetCDF2D):
         _slice=slice(i,np.minimum(nnode,i+gnode))
         self[groupName,vname,_slice]=fp[_slice]
       
+      if pbar0:pbar0.update(1)
+      self.removeUploadedFile(groupName,groups)
+
+      os.remove(filename)
+      
+
+
+
+  def _uploadPartition(self,groupName):
+    """ Upload Partition results
+        Gets remaining uploadFiles to upload
+        Get node ids for the "group"
+        Create memory array to store matlab results for each variable (need to temporary save the results to memory)
+          - (partitions will need additional dimension in the numpy memmap shape)
+        Upload for each variable
+    """
+    showProgress=self.showProgress
+    nnode=self.nnode
+    gnode=self.gnode
+    ntime=self.ntime
+    npart=self.npart 
+    variables=self.variables
+
+    files,groups=self.loadRemainingFilestoUpload(groupName)
+    
+    pbar=self.pbar
+    pbar0=self.pbar0
+    if pbar0 is not None: pbar0.reset(total=len(groups))
+
+    while groups:
+      vname=groups.pop(0)
+      if pbar0: pbar0.set_description(vname)
+      if self.logger is not None:self.logger.info("Uploading group {}".format(vname))
+
+      filename=os.path.join(self.cacheLocation,vname+".dat")
+
+      variable=variables[vname]
+      fileKey=variable["fileKey"]
+      _files=list(filter(lambda file:file['name']==fileKey,files))
+
+      # Initialize array
+      fp = np.memmap(filename, dtype='float32', mode='w+', shape=(nnode,npart,ntime))
+
+      if pbar is not None: pbar.reset(total=len(_files))
+      
+      # Save matlab info to array
+      for _, file in enumerate(_files):
+        _sub = NetCDFSWAN.load(file['path'])
+        dt = _sub.pop("datetime")
+        sIndex,eIndex=self.getDatetimeIndex(dt)
+        for key in _sub:
+          key_name, key_num = key[:-2], int(key[-2:])
+          if key_num <= npart: # in case only first few partitions needed
+            array = _sub[key]
+            array = np.expand_dims(array, axis=1) 
+            fp[:, key_num-1:key_num, sIndex:eIndex]=array.T
+        if pbar:pbar.update(1)
+
+      # Save array in memory to S3
+      for i in np.arange(0,nnode,gnode):
+        _slice=slice(i,np.minimum(nnode,i+gnode))
+        for p in range(npart):
+          self[groupName, vname, _slice, p] = fp[_slice, p]
+
       if pbar0:pbar0.update(1)
       self.removeUploadedFile(groupName,groups)
 

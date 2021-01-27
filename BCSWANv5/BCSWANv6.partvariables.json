@@ -1,0 +1,50 @@
+{
+  "hspt": {
+    "type":"f4",
+    "units": "m", 
+    "standard name": "partition of the significant wave height", 
+    "long name": "partitioned significant wave height (in s)",
+    "matfile name": "HsPT",
+    "fileKey":"PTHSIGN"
+  },
+  "drpt": {
+    "type":"f4",
+    "units": "degrees", 
+    "standard name": "partition of the peak wave direction", 
+    "long name": "partitioned peak wave direction (in degrees)",
+    "matfile name": "DrPT",
+    "fileKey":"PTDIR"
+  },
+  "dspt": {
+    "type":"f4",
+    "units": "degrees", 
+    "standard name": "partition of the directional spreading", 
+    "long name": "partition of the directional spreading (in degrees)",
+    "matfile name": "DsPT",
+    "fileKey":"PTDSPR"
+  },
+  "tppt": {
+    "type":"f4",
+    "units": "s", 
+    "standard name": "partition of the peak period", 
+    "long name": "partition of the peak period (in s) of the variance density (relative frequency) spectrum",
+    "matfile name": "TpPT",
+    "fileKey":"PTRTP"
+  },
+  "stpt": {
+    "type":"f4",
+    "units": "", 
+    "standard name": "partition of the wave steepness", 
+    "long name": "partition of the wave steepness (dimensionless)",
+    "matfile name": "StPT",
+    "fileKey":"PTSTEEP"
+  },
+  "wlpt": {
+    "type":"f4",
+    "units": "m", 
+    "standard name": "partition of the average wave length", 
+    "long name": "partition of the average wave length (in m)",
+    "matfile name": "WlPT",
+    "fileKey":"PTWLEN"
+  }
+}

@@ -84,11 +84,16 @@ Spatial/Temporal data:
 Spectra data:
 - **spc** - _spectra_
 
+Partitioned data:
+- **pt** - _drpt, hspt, tppt, dspt, stpt, wlpt_
+
 Values from the SWAN data are accessed via the group name, the name of a variable from that group, and an index or range of indices:
 
 swan['s', {variable}, {timestep}, {nodeId}]
 
 swan['t', {variable}, {nodeId}, {timestep}]
+
+swan['pt', {variable}, {nodeId}, {partition}, {timestep}]
 
 swan['spc', {variable}, {snodeId}, {timestep}, {freq}, {dir}]
 
@@ -101,6 +106,8 @@ examples:
 `swan['s', 'hs', :, :4]`  all timesteps for first 4 nodes
 
 `swan['t', 'hs', 62083, 0]`  significant wave height at node 62083 for first timestep
+
+`swan['pt', 'hspt', 62083, :2, 0]`  significant wave height at node 62083 of first two partitions, for first timestep
 
 `swan['spc', 'spectra', 260, 5000]`  time index 5000 at last spectra node
 

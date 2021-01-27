@@ -1,0 +1,57 @@
+{
+  "name":"SWANv6",
+  "cacheLocation":"../s3",
+  "localOnly":false,
+  "showProgress":true,
+  "bucket":"uvic-bcwave",
+  "nca": {
+    "metadata":{
+      "title":"BCSWANv6",
+      "startDate":"2004-01-01T00:00:00",
+      "timeStep(h)":1,
+      "spatial":{"x":"lon","y":"lat","elem":"elem"},
+      "temporal":{"time":"time"},
+      "spectral":{"x":"slon","y":"slat"},
+      "blacklist":["001"]
+    },
+    "dimensions" : {"npe":3,"nelem":348364,"nnode":177945,"nstation":28,"nchar":16,"nsnode":261,"ntime":123000,"nfreq":34,"ndir":36,"npart":10},
+    "groups":{
+      "elem":{"dimensions":["nelem","npe"],"variables":{
+          "elem":{"type":"i4", "units":"" ,"standard_name":"elements" ,"long_name":"elements"}
+        }
+      },
+      "time":{"dimensions":["ntime"],"variables":{
+          "time":{"type":"f8", "units":"hours since 1970-01-01 00:00:00.0","calendar":"gregorian" ,"standard_name":"Datetime" ,"long_name":"Datetime"}
+        }
+      },
+      "nodes":{"dimensions":["nnode"],"variables":{
+          "lat":{"type":"f8", "units":"degrees_north" ,"standard_name":"latitude" ,"long_name":"latitude"},
+          "lon":{"type":"f8", "units":"degrees_east" ,"standard_name":"longitude" ,"long_name":"longitude"},
+          "bed":{"type":"f4", "units":"m" ,"standard_name":"Bathymetry" ,"long_name":"Bathymetry, m (CGVD28)"}
+        }
+      },
+      "stations":{"dimensions":["nstation","nchar"],"variables":{
+          "name":{"type":"S2", "units":"" ,"standard_name":"Name" ,"long_name":"Name"}
+        }
+      },
+      "snodes":{"dimensions":["nsnode"],"variables":{
+          "slat":{"type":"f8", "units":"degrees_north" ,"standard_name":"latitude" ,"long_name":"latitude"},
+          "slon":{"type":"f8", "units":"degrees_east" ,"standard_name":"longitude" ,"long_name":"longitude"},
+          "stationid":{"type":"i4", "units":"" ,"standard_name":"Station Id" ,"long_name":""}
+        }
+      },       
+      "freq":{"dimensions":["nfreq"],"variables":{
+          "freq":{"type":"f8", "units":"Hz" ,"standard_name":"absolute frequency" ,"long_name":"absolute frequencies in Hz"}
+        }
+      },
+      "dir":{"dimensions":["ndir"],"variables":{
+          "dir":{"type":"f8", "units":"degrees" ,"standard_name":"spectral nautical directions" ,"long_name":"spectral nautical directions in degr"}
+        }
+      },      
+      "s":{"dimensions":["ntime","nnode"],"variables":"BCSWANv5.variables.json"},
+      "t":{"dimensions":["nnode","ntime"],"variables":"BCSWANv5.variables.json"},
+      "spc":{"dimensions":["nsnode","ntime","nfreq", "ndir"],"variables":"BCSWANv5.specvariables.json"},
+			"pt":{"dimensions":["nnode","npart","ntime"],"variables":"BCSWANv6.partvariables.json"}
+    }
+  }
+}

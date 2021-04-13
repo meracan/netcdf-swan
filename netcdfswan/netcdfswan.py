@@ -775,10 +775,10 @@ class NetCDFSWAN(NetCDF2D):
         _files=list(filter(lambda file_: (file_['name']==fileKey),files))
         
         # get file name for partition p
-				filename=filenames[p]
+	filename=filenames[p]
         
         # grab the memmap file (or create new one if not available)
-				fp = np.memmap(filename, dtype='float32', mode='w+', shape=(nnode,ntime))
+        fp = np.memmap(filename, dtype='float32', mode='w+', shape=(nnode,ntime))
         
         if pbar is not None: pbar.reset(total=len(_files))
         
@@ -812,11 +812,11 @@ class NetCDFSWAN(NetCDF2D):
     ntime=self.ntime
     pbar=self.pbar
 
-		# read the memmap file for partition p
-		fp = np.memmap(filename, dtype='float32', mode='r', shape=(nnode,ntime))
+    # read the memmap file for partition p
+    fp = np.memmap(filename, dtype='float32', mode='r', shape=(nnode,ntime))
     
     # g loop (Save array in memory to S3)
-		for i in np.arange(0,nnode,gnode):
-			_slice=slice(i,np.minimum(nnode,i+gnode))
-			self[groupName, vname, _slice, p] = fp[_slice]
+    for i in np.arange(0,nnode,gnode):
+      _slice=slice(i,np.minimum(nnode,i+gnode))
+      self[groupName, vname, _slice, p] = fp[_slice]
     

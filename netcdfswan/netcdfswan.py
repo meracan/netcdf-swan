@@ -759,42 +759,65 @@ class NetCDFSWAN(NetCDF2D):
     pbar0=self.pbar0
     if pbar0 is not None: pbar0.reset(total=len(groups))
 
-    while groups:
+    while groups: # for each variable in ["hspt", "drpt", "dspt", "tppt", "stpt", "wlpt"] 
       vname=groups.pop(0)
       if pbar0: pbar0.set_description(vname)
       if self.logger is not None:self.logger.info("Uploading group {}".format(vname))
 
-      filename=os.path.join(self.cacheLocation,vname+".dat")
+      filenames = [os.path.join(self.cacheLocation,vname+f"{p:02d}"+".dat") for p in range(1, npart+1)] # create list of file names
 
       variable=variables[vname]
       fileKey=variable["fileKey"]
-      _files=list(filter(lambda file:file['name']==fileKey,files))
-
-      # Initialize array
-      fp = np.memmap(filename, dtype='float32', mode='w+', shape=(nnode,npart,ntime))
-
-      if pbar is not None: pbar.reset(total=len(_files))
-      
-      # Save matlab info to array
-      for _, file in enumerate(_files):
-        _sub = NetCDFSWAN.load(file['path'])
-        dt = _sub.pop("datetime")
-        sIndex,eIndex=self.getDatetimeIndex(dt)
-        for key in _sub:
-          key_name, key_num = key[:-2], int(key[-2:])
-          if key_num <= npart: # in case only first few partitions needed
-            array = _sub[key]
-            array = np.expand_dims(array, axis=1) 
-            fp[:, key_num-1:key_num, sIndex:eIndex]=array.T
+      # enter p loop, only loading data into arrays. for each partition file for that variable
+      for p in range(npart): 
+				
+				# reset all files needed
+				_files=list(filter(lambda file_: (file_['name']==fileKey),files))
+        
+				# get file name for partition p
+				filename=filenames[p]
+        
+				# grab the memmap file (or create new one if not available)
+				fp = np.memmap(filename, dtype='float32', mode='w+', shape=(nnode,ntime))
+        
+				if pbar is not None: pbar.reset(total=len(_files))
+				
+        # Save matlab info to array
+        for _, file_ in enumerate(_files):
+          _sub = NetCDFSWAN.load(file_['path'])
+          dt = _sub.pop("datetime")
+          sIndex,eIndex=self.getDatetimeIndex(dt)
+          for key in _sub:                               # because more than one partition in the file "HsPT01_", "HsPT02_", etc.
+            key_name, key_num = key[:-2], int(key[-2:])  # split "HsPT01" into "HsPT" and 1
+            if key_num == p+1:                           # check key name. no key "0", starts from "1". 
+              array = _sub[key]                          # e.g. "HsPT01" data array
+              fp[:, sIndex:eIndex]=array.T               # load array into memmap
+          if pbar:pbar.update(1)
+					
+			if pbar is not None: pbar.reset(total=nnode/gnode) # total is 595 if gnode == 300
+			
+      # enter p loop again, this time for uploading
+			for p in range(npart):     
+        filename = filenames[p] # get file name for partition p
+        self._uploadPartitionSliceFile(groupName, vname, filename, p) # enter g loop (see below)
         if pbar:pbar.update(1)
-
-      # Save array in memory to S3
-      for i in np.arange(0,nnode,gnode):
-        _slice=slice(i,np.minimum(nnode,i+gnode))
-        for p in range(npart):
-          self[groupName, vname, _slice, p] = fp[_slice, p]
-
+        os.remove(filename)
+      
       if pbar0:pbar0.update(1)
       self.removeUploadedFile(groupName,groups)
 
-      os.remove(filename)
+  
+	def _uploadPartitionSliceFile(self, groupName, vname, filename, p):
+    nnode=self.nnode
+    gnode=self.gnode
+    ntime=self.ntime
+    pbar=self.pbar
+    
+		# read the memmap file for partition p
+    fp = np.memmap(filename, dtype='float32', mode='r', shape=(nnode,ntime))
+    
+		# g loop (Save array in memory to S3)
+    for i in np.arange(0,nnode,gnode):
+      _slice=slice(i,np.minimum(nnode,i+gnode))
+      self[groupName, vname, _slice, p] = fp[_slice]
+    

@@ -3,11 +3,12 @@ import json
 import numpy as np
 from tqdm import tqdm
 from scipy.io import loadmat
-from s3netcdf import NetCDF2D 
+from s3netcdf import S3NetCDF 
 from datetime import datetime
 import re
+import time
 
-class NetCDFSWAN(NetCDF2D):
+class NetCDFSWAN(S3NetCDF):
   """
     Creates and stores partitioned netcdf (.nc) files from SWAN data into a local cache and
     uploads them to an Amazon S3 bucket, using the s3-netcdf package.
@@ -79,14 +80,28 @@ class NetCDFSWAN(NetCDF2D):
   """
   def __init__(self,obj,logger=None):
     super().__init__(obj)
-    
     self.swanFolder=obj.get("swanFolder")
+    self.logger       = logger
+    self.gnode        = obj.get("gnode",1000) # Number of nodes to upload at a time
+    self.showProgress = showProgress = obj.get("showProgress",False)
+    self.pbar0        = None
     
-    self.logger     = logger
+    # Show progress bar
+    if showProgress:
+      try:
+        from tqdm import tqdm
+        self.pbar0 = tqdm(total=1, position=1)
+        self.pbar = tqdm(total=1, position=0)
+      except Exception as err:
+        import warnings
+        warnings.warn("tqdm does not exist")    
+    
+  def __enter__(self):
+    super().__enter__()
   
     # Initialize some of the info from nca to self.
     # If the info is missing, it will raise an exception.
-    info        = self.info()
+    info        = self.obj
     self.ntime  = ntime = info['dimensions'].get('ntime')
     self.nnode  = info['dimensions'].get('nnode')
     self.nsnode = info['dimensions'].get('nsnode')
@@ -105,14 +120,14 @@ class NetCDFSWAN(NetCDF2D):
     
     # Load variables for matlab output
     # This contains an array of all variables and only used to save the temporal axis data
-    variables=info['metadata'].get('mvariables')
-    self.variables = variables
+    mvariables=info['metadata'].get('mvariables')
+    self.mvariables = mvariables
     
     # Get the matlab variable name
     mtname={}
-    for key in self.variables:
-      variable=self.variables.get(key)
-      matname=variable.get("matfile name")
+    for key in self.mvariables:
+      mvariables=self.mvariables.get(key)
+      matname=mvariables.get("matfile name")
       mtname[matname]=key
     self.mtname=mtname
 
@@ -120,25 +135,11 @@ class NetCDFSWAN(NetCDF2D):
     errorlistPath = os.path.join(self.folder, "error_list.json")
     if not os.path.isfile(errorlistPath):json.dump([], open(errorlistPath, "w+"))
     self.errorlist = json.load(open(errorlistPath))
-
-    
-    # Show progress bar
-    self.showProgress=showProgress=obj.get("showProgress",False)
-    self.pbar0=None 
-    if showProgress:
-      try:
-        from tqdm import tqdm
-        self.pbar0 = tqdm(total=1, position=1)
-        self.pbar = tqdm(total=1, position=0)
-      except Exception as err:
-        import warnings
-        warnings.warn("tqdm does not exist")
     
     # Avoid certain files
     self.blacklist=info['metadata'].get('blacklist',[])
+    return self
     
-    # Number of nodes to upload at a time
-    self.gnode = obj.get("gnode",1000)
  
   @property
   def matFiles(self):
@@ -585,7 +586,7 @@ class NetCDFSWAN(NetCDF2D):
     if groupName=="s" or groupName=="spc":
       uploadFiles=files
     elif groupName=="t":
-      uploadFiles=list(filter(lambda name:name!="spectra",list(self.variables.keys())))
+      uploadFiles=list(filter(lambda name:name!="spectra",list(self.mvariables.keys())))
       files=list(filter(lambda file: file['path'] not in self.errorlist,files)) # To remove files with errors
     else:
       raise Exception("Needs to be s,t,spc")
@@ -623,7 +624,6 @@ class NetCDFSWAN(NetCDF2D):
     """
     showProgress=self.showProgress
     mtname=self.mtname
-    variables=self.variables
     stations=self.stations
 
     _,groups=self.loadRemainingFilestoUpload(groupName)
@@ -652,13 +652,16 @@ class NetCDFSWAN(NetCDF2D):
         array=_sub[key]
         name=mtname[key] # Convert matlab/spc name variable to nca name variable
         if groupName=="s":
+          
           self[groupName,name,sIndex:eIndex]=array #upload
+          
         else:
           # Spectral file
           array=np.einsum("abcd->bacd",array) # Need to swap first and second axes
           _sIndex=stations[file['name']]['start']
           _eIndex=stations[file['name']]['end']
           self[groupName,name,_sIndex:_eIndex,sIndex:eIndex]=array # Upload
+          
       
       if pbar0:pbar0.update(1)
       self.removeUploadedFile(groupName,groups)
@@ -676,7 +679,7 @@ class NetCDFSWAN(NetCDF2D):
     nnode=self.nnode
     gnode=self.gnode
     ntime=self.ntime
-    variables=self.variables
+    variables=self.mvariables
 
     files,groups=self.loadRemainingFilestoUpload(groupName)
 

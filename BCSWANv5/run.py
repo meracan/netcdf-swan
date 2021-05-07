@@ -1,31 +1,45 @@
 import os
 import json
 from netcdfswan import NetCDFSWAN
-
+import numpy as np
 
 if __name__ == "__main__":
-  # swanFolder='../s3/data'
-  # jsonFile='BCSWANv5/BCSWANv5.json'
-  # input=NetCDFSWAN.prepareInputJSON(jsonFile,swanFolder,year=2004,month=1)
+  swanFolder='../s3/data'
+  jsonFile='BCSWANv5/BCSWANv5.json'
+  input=NetCDFSWAN.prepareInputJSON(jsonFile,swanFolder,year=2004,month=1)
+  NetCDFSWAN(input)
   
   
   
-  input={
-    "name":"SWANv5",
-    "swanFolder":'../s3/data',
-    "bucket":"uvic-bcwave",
-    "showProgress":True,
-    "memorySize":10,
-    "cacheSize":100,
-    "cacheLocation":"../s3",
-    "localOnly":False
-  }
   
   
-  swan=NetCDFSWAN(input)
-  # swan.uploadStatic(year=2004)
-  # swan.uploadS()
-  # swan.uploadT()
-  # swan.uploadSpc()
+  # input={
+  #   "name":"SWANv5",
+  #   "swanFolder":'../s3',
+  #   "bucket":"uvic-bcwave",
+  #   "showProgress":True,
+  #   "memorySize":40,
+  #   "cacheSize":100,
+  #   "cacheLocation":"../s3",
+  #   "localOnly":True
+  # }
+  # with NetCDFSWAN(input) as swan:
+    # ntime     = swan.obj['dimensions'].get('ntime')
+    # startDate = swan.obj['metadata'].get('startDate')
+    # timeStep  = swan.obj['metadata'].get('timeStep(h)')
+    # startDate=np.datetime64(startDate)
+    # datetime  = startDate+np.arange(ntime)*np.timedelta64(timeStep, 'h')
+    # swan['time','time']=datetime
+    # print(datetime)
+    # print(swan['time','time'])
+    
+    # dirbin=np.array([265,255,245,235,225,215,205,195,185,175,165,155,145,135,125,115,105, 95, 85, 75, 65, 55, 45, 35, 25, 15,  5, -5,-15,-25,-35,-45,-55,-65,-75,-85]) 
+    # swan['dirbin','dirbin']=dirbin
+    
+    
+    # swan.uploadStatic(year=2004)
+    # swan.uploadS()
+    # swan.uploadT()
+    # swan.uploadSpc()
   
   

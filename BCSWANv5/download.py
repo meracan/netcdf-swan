@@ -36,7 +36,7 @@ def hook(t):
   return inner
   
 def downloadWithProgress(key):
-    s3=boto3.client('s3',aws_access_key_id="AKIAWNDVSEMCZMGEM3UM",aws_secret_access_key="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")
+    s3=boto3.client('s3')
     filepath=getCachePath(key)
     file_object = s3.get_object(Bucket=bucketName, Key=key)
     name=file_object.get("name")

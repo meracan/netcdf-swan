@@ -127,16 +127,17 @@ class NetCDFSWAN(S3NetCDF):
     # Get the matlab variable name
     mtname={}
     for key in self.mvariables:
-      mvariables=self.mvariables.get(key)
-      matname=mvariables.get("matfile name")
+      mvariable=self.mvariables.get(key)
+      matname=mvariable.get("matfile name")
       mtname[matname]=key
     self.mtname=mtname
+    # print(mtname)
     
     # Combine matfile names and variables of partition files
     pt_gvar = set(info['groups']['pt']['variables'].keys())
-    pt_intr = list(set(dict(variables.items()).keys()).intersection(pt_gvar))
-    self.ptList = [v["fileKey"] for k,v in variables.items() if k in pt_gvar] + pt_intr
-
+    pt_intr = list(set(dict(self.mvariables.items()).keys()).intersection(pt_gvar))
+    self.ptList = [v["fileKey"] for k,v in self.mvariables.items() if k in pt_gvar] + pt_intr
+    
     # Collect corrupted files. Read from json first, if available
     errorlistPath = os.path.join(self.folder, "error_list.json")
     if not os.path.isfile(errorlistPath):json.dump([], open(errorlistPath, "w+"))
@@ -565,7 +566,7 @@ class NetCDFSWAN(S3NetCDF):
     endIndex=np.where(_datetime==endDate)[0][0]+1
     return startIndex,endIndex
     
-  def loadRemainingFilestoUpload(self,groupName):
+  def loadRemainingFilestoUpload(self,groupName,partName=""):
     """ 
     Create temporay json file of all files/groups(called uploadFiles) that needs to be uploaded
     For "s" and "spc" group, "uploadFiles" are the same as the original .mat or .spc files.
@@ -584,7 +585,7 @@ class NetCDFSWAN(S3NetCDF):
     
     # Check if json file already exist. 
     # If so, return the json that contains all the files that need to be uploaded.
-    path=os.path.join(self.cacheLocation,self.name,groupName+".json")
+    path=os.path.join(self.cacheLocation,self.name,"{}{}.json".format(groupName,partName))
     if os.path.exists(path):
       uploadFiles=NetCDFSWAN.load(path)
       return files,uploadFiles
@@ -596,10 +597,11 @@ class NetCDFSWAN(S3NetCDF):
     elif groupName=="s":
       uploadFiles=list(filter(lambda file: file['name'] not in self.ptList, files))
     elif groupName=="t":
-      uploadFiles=list(filter(lambda name: name!="spectra" and name not in self.ptList, list(self.variables.keys())))
+      uploadFiles=list(filter(lambda name: name!="spectra" and name not in self.ptList, list(self.mvariables.keys())))
       files=list(filter(lambda file: file['path'] not in self.errorlist, files)) # To remove files with errors
     elif groupName=="pt":
-      uploadFiles=list(filter(lambda name: name in self.ptList, list(self.variables.keys())))
+      print(self.ptList)
+      uploadFiles=list(filter(lambda name: name in self.ptList, list([partName])))
       files=list(filter(lambda file: file['path'] not in self.errorlist, files)) # To remove files with errors
     else:
       raise Exception("Needs to be s,t,spc,pt")
@@ -628,8 +630,8 @@ class NetCDFSWAN(S3NetCDF):
     self._uploadSpatial("spc")
   def uploadT(self):
     self._uploadTemporal("t")
-  def uploadPt(self):
-    self._uploadPartition("pt")
+  def uploadPt(self,varName):
+    self._uploadPartition("pt",varName)
   
     
   def _uploadSpatial(self,groupName):
@@ -741,7 +743,7 @@ class NetCDFSWAN(S3NetCDF):
 
 
 
-  def _uploadPartition(self,groupName):
+  def _uploadPartition(self,groupName,varName):
     """ Upload Partition results
         Gets remaining uploadFiles to upload
         Get node ids for the "group"
@@ -754,14 +756,15 @@ class NetCDFSWAN(S3NetCDF):
     gnode=self.gnode
     ntime=self.ntime
     npart=self.npart 
-    variables=self.variables
-
-    files,groups=self.loadRemainingFilestoUpload(groupName)
+    variables=self.mvariables
+    # print(variables)
+    files,groups=self.loadRemainingFilestoUpload(groupName,varName)
     
     pbar=self.pbar
     pbar0=self.pbar0
     if pbar0 is not None: pbar0.reset(total=len(groups))
-
+    # print(files,groups)
+    # return files,groups
     while groups:
       vname=groups.pop(0)
       if pbar0: pbar0.set_description(vname)
@@ -790,14 +793,16 @@ class NetCDFSWAN(S3NetCDF):
             array = np.expand_dims(array, axis=1) 
             fp[:, key_num-1:key_num, sIndex:eIndex]=array.T
         if pbar:pbar.update(1)
+      
+      
+      # fp = np.memmap(filename, dtype='float32', mode='r', shape=(nnode,npart,ntime))
+      # # Save array in memory to S3
+      # for i in np.arange(0,nnode,gnode):
+      #   _slice=slice(i,np.minimum(nnode,i+gnode))
+      #   for p in range(npart):
+      #     self[groupName, vname, _slice, p] = fp[_slice, p]
 
-      # Save array in memory to S3
-      for i in np.arange(0,nnode,gnode):
-        _slice=slice(i,np.minimum(nnode,i+gnode))
-        for p in range(npart):
-          self[groupName, vname, _slice, p] = fp[_slice, p]
+      # if pbar0:pbar0.update(1)
+      # self.removeUploadedFile(groupName,groups)
 
-      if pbar0:pbar0.update(1)
-      self.removeUploadedFile(groupName,groups)
-
-      os.remove(filename)
+      # os.remove(filename)

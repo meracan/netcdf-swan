@@ -5,25 +5,25 @@ import numpy as np
 
 if __name__ == "__main__":
   swanFolder='../data'
-  jsonFile='BCSWANv5/BCSWANv5.json'
-  input=NetCDFSWAN.prepareInputJSON(jsonFile,swanFolder,year=2004,month=1)
-  NetCDFSWAN(input)
+  jsonFile='BCSWANv6/BCSWANv6.json'
   
   
   
   
   
-  # input={
-  #   "name":"SWANv5",
-  #   "swanFolder":'../s3',
-  #   "bucket":"uvic-bcwave",
-  #   "showProgress":True,
-  #   "memorySize":40,
-  #   "cacheSize":100,
-  #   "cacheLocation":"../s3",
-  #   "localOnly":True
-  # }
-  # with NetCDFSWAN(input) as swan:
+  
+  input={
+    "name":"SWANv6",
+    "swanFolder":'../data',
+    "bucket":"uvic-bcwave",
+    "showProgress":True,
+    "memorySize":40,
+    "cacheSize":100,
+    "cacheLocation":"../data",
+    "localOnly":False
+  }
+  with NetCDFSWAN(input) as swan:
+    swan.uploadPt("hspt")
     # ntime     = swan.obj['dimensions'].get('ntime')
     # startDate = swan.obj['metadata'].get('startDate')
     # timeStep  = swan.obj['metadata'].get('timeStep(h)')

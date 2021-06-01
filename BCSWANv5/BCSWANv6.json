@@ -1,6 +1,6 @@
 {
   "name":"SWANv6",
-  "cacheLocation":"../s3",
+  "cacheLocation":"../data",
   "localOnly":false,
   "showProgress":true,
   "bucket":"uvic-bcwave",

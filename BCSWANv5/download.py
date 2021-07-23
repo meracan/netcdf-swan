@@ -36,7 +36,8 @@ def hook(t):
   return inner
   
 def downloadWithProgress(key):
-    s3=boto3.client('s3')
+    session = boto3.Session(profile_name="jcousineau")
+    s3 = session.client('s3')
     filepath=getCachePath(key)
     file_object = s3.get_object(Bucket=bucketName, Key=key)
     name=file_object.get("name")
@@ -47,7 +48,12 @@ def downloadWithProgress(key):
     return True
 
 def run():
-  variable="PTHSIGN"
+  # variable="PTHSIGN"
+  # variable="PTRTP"
+  variable="PTDIR"
+  # variable="PTDSPR"
+  # variable="PTSTEEP"
+  # variable="PTWLEN"  
   keys=getKeys(variable)
   for key in keys:
     path=getCachePath(key)
@@ -57,11 +63,7 @@ def run():
       response=downloadWithProgress(key)
     
     
-# variable="PTRTP"
-# variable="PTDIR"
-# variable="PTDSPR"
-# variable="PTSTEEP"
-# variable="PTWLEN"
+
 
 
   

@@ -1,7 +1,5 @@
 import os
-import shutil
 import json
-import uuid
 import numpy as np
 from tqdm import tqdm
 from scipy.io import loadmat
@@ -9,10 +7,6 @@ from s3netcdf import S3NetCDF
 from datetime import datetime
 import re
 import time
-import boto3
-from botocore.errorfactory import ClientError
-from boto3.s3.transfer import TransferConfig
-
 
 class NetCDFSWAN(S3NetCDF):
   """
@@ -140,8 +134,8 @@ class NetCDFSWAN(S3NetCDF):
     
     # Combine matfile names and variables of partition files
     pt_gvar = set(info['groups']['pt']['variables'].keys())
-    pt_intr = list(set(dict(self.mvariables.items()).keys()).intersection(pt_gvar))
-    self.ptList = [v["fileKey"] for k,v in self.mvariables.items() if k in pt_gvar] + pt_intr
+    pt_intr = list(set(dict(mvariables.items()).keys()).intersection(pt_gvar))
+    self.ptList = [v["fileKey"] for k,v in mvariables.items() if k in pt_gvar] + pt_intr
 
     # Collect corrupted files. Read from json first, if available
     errorlistPath = os.path.join(self.folder, "error_list.json")
@@ -560,18 +554,18 @@ class NetCDFSWAN(S3NetCDF):
     self['dir','dir']=spc['dir'];update("dir")
 
     
-  @staticmethod
-  def getDatetimeIndex(datetime,dt):
+
+  def getDatetimeIndex(self,dt):
     """ Find first and last datetime index.
     """
-    _datetime=datetime
+    _datetime=self.datetime
     startDate=dt[0]
     endDate=dt[len(dt)-1]
     startIndex=np.where(_datetime==startDate)[0][0]
     endIndex=np.where(_datetime==endDate)[0][0]+1
     return startIndex,endIndex
     
-  def loadRemainingFilestoUpload(self,groupName,partName=""):
+  def loadRemainingFilestoUpload(self,groupName):
     """ 
     Create temporay json file of all files/groups(called uploadFiles) that needs to be uploaded
     For "s" and "spc" group, "uploadFiles" are the same as the original .mat or .spc files.
@@ -590,7 +584,7 @@ class NetCDFSWAN(S3NetCDF):
     
     # Check if json file already exist. 
     # If so, return the json that contains all the files that need to be uploaded.
-    path=os.path.join(self.cacheLocation,self.name,"{}{}.json".format(groupName,partName))
+    path=os.path.join(self.cacheLocation,self.name,groupName+".json")
     if os.path.exists(path):
       uploadFiles=NetCDFSWAN.load(path)
       return files,uploadFiles
@@ -602,13 +596,10 @@ class NetCDFSWAN(S3NetCDF):
     elif groupName=="s":
       uploadFiles=list(filter(lambda file: file['name'] not in self.ptList, files))
     elif groupName=="t":
-      uploadFiles=list(filter(lambda name: name!="spectra" and name not in self.ptList, list(self.variables.keys())))
+      uploadFiles=list(filter(lambda name: name!="spectra" and name not in self.ptList, list(self.mvariables.keys())))
       files=list(filter(lambda file: file['path'] not in self.errorlist, files)) # To remove files with errors
     elif groupName=="pt":
-      # uploadFiles=["{}".format(i) for i in range(10)]
-      uploadFiles=["{}".format(i) for i in range(1)]
-      print(uploadFiles,"here")
-      
+      uploadFiles=[]
       files=list(filter(lambda file: file['path'] not in self.errorlist, files)) # To remove files with errors
     else:
       raise Exception("Needs to be s,t,spc,pt")
@@ -617,11 +608,11 @@ class NetCDFSWAN(S3NetCDF):
       
     return files,uploadFiles
   
-  def removeUploadedFile(self,groupName,groups,partName=""):
+  def removeUploadedFile(self,groupName,groups):
     """ Remove file from json since it's been uploaded
     """
     if not isinstance(groups,list):groups=[groups] # Make sure it's a list
-    path=os.path.join(self.cacheLocation,self.name,"{}{}.json".format(groupName,partName))
+    path=os.path.join(self.cacheLocation,self.name,groupName+".json")
     with open(path,"w") as f:json.dump(groups, f)
   
   def addErrorFile(self,file):
@@ -639,8 +630,6 @@ class NetCDFSWAN(S3NetCDF):
     self._uploadTemporal("t")
   def uploadPt(self,vname):
     self._uploadPartition("pt",vname)
-  def uploadPtv2(self,vname):
-    self._uploadPartitionStep2("pt",vname)    
   
     
   def _uploadSpatial(self,groupName):
@@ -672,7 +661,7 @@ class NetCDFSWAN(S3NetCDF):
         continue      
         
       dt=_sub.pop("datetime") # Remove datetime from dict since we don't want to upload this
-      sIndex,eIndex=NetCDFSWAN.getDatetimeIndex(self.datetime,dt) # Get datetime index
+      sIndex,eIndex=self.getDatetimeIndex(dt) # Get datetime index
       
       for key in _sub: # Loop for each variable(e.g Windv_x and Windv_y)
         array=_sub[key]
@@ -732,7 +721,7 @@ class NetCDFSWAN(S3NetCDF):
       for _,file in enumerate(_files):
         _sub=NetCDFSWAN.load(file['path'])
         dt=_sub.pop("datetime")
-        sIndex,eIndex=NetCDFSWAN.getDatetimeIndex(self.datetime,dt)
+        sIndex,eIndex=self.getDatetimeIndex(dt)
         for key in _sub:
           if key==variable['matfile name']:
             array=_sub[key]
@@ -760,119 +749,51 @@ class NetCDFSWAN(S3NetCDF):
           - (partitions will need additional dimension in the numpy memmap shape)
         Upload for each variable
     """
-    import ray
-    ray.init(num_cpus=8)
-    
     showProgress=self.showProgress
     nnode=self.nnode
-    gnode=300
+    nnodePerSlice=int(nnode/10.0)
+    gnode=self.gnode
     ntime=self.ntime
     npart=self.npart 
     variables=self.mvariables
-    datetime=self.datetime
-
-    files,groups=self.loadRemainingFilestoUpload(groupName,vname)
+    variable=variables[vname]
+    
+    files,groups=self.loadRemainingFilestoUpload(groupName)
     
     pbar=self.pbar
-    datPath=os.path.join(self.cacheLocation,"{}.dat".format(vname))
+
+    filename=os.path.join(self.cacheLocation,"{}.dat".format(vname))
+
     
+    fileKey=variable["fileKey"]
+    _files=list(filter(lambda file:file['name']==fileKey,files))
 
     # Initialize array
-    np.memmap(datPath, dtype='float16', mode='w+', shape=(nnode,npart,ntime))
+    fp = np.memmap(filename, dtype='float32', mode='r+', shape=(nnode,npart,ntime))
+
+    if pbar is not None: pbar.reset(total=len(_files))
     
-    cacheLocation="../data"
-    s3Prefix="partitionSWANv6"
-    bucketName="uvic-bcwave"
-    variable="PTWLEN"
-    
-    keys=getKeys(s3Prefix,variable)
-    if pbar is not None: pbar.reset(total=len(keys))
-    
-    @ray.remote
-    def work(key):
-      file=getCachePath(s3Prefix,cacheLocation,key)
-      folder=os.path.dirname(file)
-      os.makedirs(folder, exist_ok=True)
-      if not os.path.exists(file):
-        download(bucketName,s3Prefix,cacheLocation,key)
-      
-      fp = np.memmap(datPath, dtype='float16', mode='r+', shape=(nnode,npart,ntime))
-      
-      _sub = NetCDFSWAN.load(file)
+    # Save matlab info to array
+    for _, file in enumerate(_files[70:]):
+      _sub = NetCDFSWAN.load(file['path'])
       dt = _sub.pop("datetime")
-      sIndex,eIndex=NetCDFSWAN.getDatetimeIndex(datetime,dt)
+      sIndex,eIndex=self.getDatetimeIndex(dt)
+      tmpdata=np.zeros((eIndex-sIndex,npart,nnode),dtype='float32')
       for key in _sub:
         key_name, key_num = key[:-2], int(key[-2:])
         if key_num <= npart: # in case only first few partitions needed
-          array = _sub[key]
-          fp[:, key_num-1, sIndex:eIndex]=array.T
-    
-    result_ids = [work.remote(key) for key in keys] 
-    while len(result_ids): 
-      done_id, result_ids = ray.wait(result_ids)
-      count=ray.get(done_id[0])
+          tmpdata[:,key_num-1] = _sub[key]
+      
+      fp[:, :, sIndex:eIndex]=tmpdata.T
       if pbar:pbar.update(1)
-    
-      
-      
-  def _uploadPartitionStep2(self,groupName,vname):    
-    import ray
-    ray.init()
-    
-    # Save array in memory to S3
-    nnode=self.nnode
-    gnode=300
-    ntime=self.ntime
-    npart=self.npart 
-    
-    pbar=self.pbar
-    datPath=os.path.join(self.cacheLocation,"{}.dat".format(vname))
-    
-    
-    if pbar is not None: pbar.reset(total=int(nnode/gnode))
-    obj=self.object
-    
-    @ray.remote
-    def work(i):
-      fp = np.memmap(datPath, dtype='float16', mode='r', shape=(nnode,npart,ntime))
-      _slice=slice(i,np.minimum(nnode,i+gnode))
-      with S3NetCDF(obj) as netcdf:
-        netcdf[groupName, vname, _slice] = fp[_slice]
-      
-    if pbar:pbar.update(32)  
-    result_ids = [work.remote(i) for i in np.arange(32*300,nnode,gnode)] 
-    while len(result_ids): 
-      done_id, result_ids = ray.wait(result_ids)
-      count=ray.get(done_id[0])
-      if pbar:pbar.update(1)
-      
 
-def getKeys(s3Prefix,variable):
-  years=["{}".format(x) for x in range(2004, 2018)]
-  months=["{0:02d}".format(x) for x in range(1, 13)]
-  keys=[]
-  for year in years:
-    for month in months:
-      keys.append("{}/{}/{}/results/{}.mat".format(s3Prefix,year,month,variable))  
-  return keys
-  
-def getKey(self,s3Prefix,cacheLocation,filepath):
-    path = os.path.relpath(filepath,cacheLocation)
-    return os.path.join(s3Prefix,path)
-  
-def getCachePath(s3Prefix,cacheLocation,key):
-    path = os.path.relpath(key,s3Prefix)
-    return os.path.join(cacheLocation,path)
+    # # Save array in memory to S3
+    # for i in np.arange(0,nnode,gnode):
+    #   _slice=slice(i,np.minimum(nnode,i+gnode))
+    #   for p in range(npart):
+    #     self[groupName, vname, _slice, p] = fp[_slice, p]
 
-def hook(t):
-  def inner(bytes_amount):
-    t.update(bytes_amount)
-  return inner
-  
-def download(bucketName,s3Prefix,cacheLocation,key):
-    session = boto3.Session(profile_name="jcousineau")
-    s3 = session.client('s3')
-    filepath=getCachePath(s3Prefix,cacheLocation,key)
-    with open(filepath, 'wb') as data:
-      s3.download_fileobj(bucketName,key,data)
-    return filepath
+    # if pbar0:pbar0.update(1)
+    # self.removeUploadedFile(groupName,groups)
+
+    # os.remove(filename)

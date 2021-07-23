@@ -1,7 +1,5 @@
 import os
-import shutil
 import json
-import uuid
 import numpy as np
 from tqdm import tqdm
 from scipy.io import loadmat
@@ -9,10 +7,6 @@ from s3netcdf import S3NetCDF
 from datetime import datetime
 import re
 import time
-import boto3
-from botocore.errorfactory import ClientError
-from boto3.s3.transfer import TransferConfig
-
 
 class NetCDFSWAN(S3NetCDF):
   """
@@ -761,7 +755,7 @@ class NetCDFSWAN(S3NetCDF):
         Upload for each variable
     """
     import ray
-    ray.init(num_cpus=8)
+    ray.init()
     
     showProgress=self.showProgress
     nnode=self.nnode
@@ -774,105 +768,106 @@ class NetCDFSWAN(S3NetCDF):
     files,groups=self.loadRemainingFilestoUpload(groupName,vname)
     
     pbar=self.pbar
-    datPath=os.path.join(self.cacheLocation,"{}.dat".format(vname))
+    pbar0=self.pbar0
+    if pbar0 is not None: pbar0.reset(total=len(groups))
     
+    while groups:
+      fileId=int(groups.pop(0))
+      if pbar0: pbar0.set_description("{}".format(fileId))
+      gNode=177950
+      startIndex=gNode*fileId
+      nodeSlice=slice(startIndex,np.minimum(nnode,startIndex+gNode))
+      ngNode=nodeSlice.stop-nodeSlice.start
+      if self.logger is not None:self.logger.info("Uploading group {}".format(fileId))
 
-    # Initialize array
-    np.memmap(datPath, dtype='float16', mode='w+', shape=(nnode,npart,ntime))
-    
-    cacheLocation="../data"
-    s3Prefix="partitionSWANv6"
-    bucketName="uvic-bcwave"
-    variable="PTWLEN"
-    
-    keys=getKeys(s3Prefix,variable)
-    if pbar is not None: pbar.reset(total=len(keys))
-    
-    @ray.remote
-    def work(key):
-      file=getCachePath(s3Prefix,cacheLocation,key)
-      folder=os.path.dirname(file)
-      os.makedirs(folder, exist_ok=True)
-      if not os.path.exists(file):
-        download(bucketName,s3Prefix,cacheLocation,key)
+      filename=os.path.join(self.cacheLocation,"{}.{}.dat".format(vname,fileId))
+
+      variable=variables[vname]
+      fileKey=variable["fileKey"]
+      _files=list(filter(lambda file:file['name']==fileKey,files))
+
+      # Initialize array
+      np.memmap(filename, dtype='float32', mode='w+', shape=(ngNode,npart,ntime))
+
+      if pbar is not None: pbar.reset(total=len(_files))
       
-      fp = np.memmap(datPath, dtype='float16', mode='r+', shape=(nnode,npart,ntime))
+      @ray.remote 
+      def work(file):
+        fp = np.memmap(filename, dtype='float32', mode='r+', shape=(ngNode,npart,ntime))
+        _sub = NetCDFSWAN.load(file['path'])
+        dt = _sub.pop("datetime")
+        sIndex,eIndex=NetCDFSWAN.getDatetimeIndex(datetime,dt)
+        for key in _sub:
+          key_name, key_num = key[:-2], int(key[-2:])
+          if key_num <= npart: # in case only first few partitions needed
+            array = _sub[key]
+            fp[:, key_num-1, sIndex:eIndex]=array[:,nodeSlice].T
       
-      _sub = NetCDFSWAN.load(file)
-      dt = _sub.pop("datetime")
-      sIndex,eIndex=NetCDFSWAN.getDatetimeIndex(datetime,dt)
-      for key in _sub:
-        key_name, key_num = key[:-2], int(key[-2:])
-        if key_num <= npart: # in case only first few partitions needed
-          array = _sub[key]
-          fp[:, key_num-1, sIndex:eIndex]=array.T
-    
-    result_ids = [work.remote(key) for key in keys] 
-    while len(result_ids): 
-      done_id, result_ids = ray.wait(result_ids)
-      count=ray.get(done_id[0])
-      if pbar:pbar.update(1)
-    
+      
+      result_ids = [work.remote(file) for file in files] 
+      while len(result_ids): 
+        done_id, result_ids = ray.wait(result_ids)
+        count=ray.get(done_id[0])
+        if pbar:pbar.update(1)
+      
+      # # Save matlab info to array
+      # for _, file in enumerate(_files):
+      #   _sub = NetCDFSWAN.load(file['path'])
+      #   dt = _sub.pop("datetime")
+      #   sIndex,eIndex=NetCDFSWAN.getDatetimeIndex(self.datetime,dt)
+      #   for key in _sub:
+      #     key_name, key_num = key[:-2], int(key[-2:])
+      #     if key_num <= npart: # in case only first few partitions needed
+      #       array = _sub[key]
+      #       fp[:, key_num-1, sIndex:eIndex]=array[:,nodeSlice].T
+      #   if pbar:pbar.update(1)
+      
+      if pbar0:pbar0.update(1)
+      self.removeUploadedFile(groupName,groups)    
+      
+
+ 
       
       
   def _uploadPartitionStep2(self,groupName,vname):    
-    import ray
-    ray.init()
-    
     # Save array in memory to S3
     nnode=self.nnode
-    gnode=300
+    gnode=3000
     ntime=self.ntime
     npart=self.npart 
+    variables=self.mvariables
+
+    files,groups=self.loadRemainingFilestoUpload(groupName,vname)
     
     pbar=self.pbar
-    datPath=os.path.join(self.cacheLocation,"{}.dat".format(vname))
+    pbar0=self.pbar0
+    if pbar0 is not None: pbar0.reset(total=len(groups))
     
-    
-    if pbar is not None: pbar.reset(total=int(nnode/gnode))
-    obj=self.object
-    
-    @ray.remote
-    def work(i):
-      fp = np.memmap(datPath, dtype='float16', mode='r', shape=(nnode,npart,ntime))
-      _slice=slice(i,np.minimum(nnode,i+gnode))
-      with S3NetCDF(obj) as netcdf:
-        netcdf[groupName, vname, _slice] = fp[_slice]
-      
-    if pbar:pbar.update(32)  
-    result_ids = [work.remote(i) for i in np.arange(32*300,nnode,gnode)] 
-    while len(result_ids): 
-      done_id, result_ids = ray.wait(result_ids)
-      count=ray.get(done_id[0])
-      if pbar:pbar.update(1)
-      
+    while groups:
+      fileId=int(groups.pop(0))
+      if pbar0: pbar0.set_description("{}".format(fileId))
+      gNode=177950
+      startIndex=gNode*fileId
+      nodeSlice=slice(startIndex,np.minimum(nnode,startIndex+gNode))
+      if self.logger is not None:self.logger.info("Uploading group {}".format(fileId))
 
-def getKeys(s3Prefix,variable):
-  years=["{}".format(x) for x in range(2004, 2018)]
-  months=["{0:02d}".format(x) for x in range(1, 13)]
-  keys=[]
-  for year in years:
-    for month in months:
-      keys.append("{}/{}/{}/results/{}.mat".format(s3Prefix,year,month,variable))  
-  return keys
+      filename=os.path.join(self.cacheLocation,"{}.{}.dat".format(vname,fileId))
+      
+      ngNode=nodeSlice.stop-nodeSlice.start
+      fp = np.memmap(filename, dtype='float32', mode='r', shape=(ngNode,npart,ntime))
+      
+      if pbar is not None: pbar.reset(total=int(ngNode/gnode))
+      
+      for i in np.arange(0,ngNode,gnode):
+        
+        _slice=slice(i,np.minimum(ngNode,i+gnode))
+        _s=gNode*fileId+i
+        _e=np.minimum(nnode,_s+(_slice.stop-_slice.start))
+        _nodeSlice=slice(_s,_e)
+        self[groupName, vname, _nodeSlice] = fp[_slice]
+        if pbar:pbar.update(1)
   
-def getKey(self,s3Prefix,cacheLocation,filepath):
-    path = os.path.relpath(filepath,cacheLocation)
-    return os.path.join(s3Prefix,path)
+      if pbar0:pbar0.update(1)
+      self.removeUploadedFile(groupName,groups,vname)
   
-def getCachePath(s3Prefix,cacheLocation,key):
-    path = os.path.relpath(key,s3Prefix)
-    return os.path.join(cacheLocation,path)
-
-def hook(t):
-  def inner(bytes_amount):
-    t.update(bytes_amount)
-  return inner
-  
-def download(bucketName,s3Prefix,cacheLocation,key):
-    session = boto3.Session(profile_name="jcousineau")
-    s3 = session.client('s3')
-    filepath=getCachePath(s3Prefix,cacheLocation,key)
-    with open(filepath, 'wb') as data:
-      s3.download_fileobj(bucketName,key,data)
-    return filepath
+      # os.remove(filename)

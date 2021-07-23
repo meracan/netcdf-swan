@@ -4,8 +4,8 @@ from netcdfswan import NetCDFSWAN
 import numpy as np
 
 if __name__ == "__main__":
-  swanFolder='../data'
-  jsonFile='BCSWANv6/BCSWANv6.json'
+  # swanFolder='../nvme'
+  # jsonFile='BCSWANv6/BCSWANv6.json'
   
   
   
@@ -17,13 +17,27 @@ if __name__ == "__main__":
     "swanFolder":'../data',
     "bucket":"uvic-bcwave",
     "showProgress":True,
-    "memorySize":40,
+    "memorySize":100,
     "cacheSize":100,
     "cacheLocation":"../data",
-    "localOnly":False
+    "localOnly":False,
+    "credentials":{
+      "profile_name":"jcousineau",
+    }
   }
+  # var="hspt"
+  # var="tppt"
+  # var="drpt"
+  # var="dspt"
+  # var="stpt"
+  var="wlpt"
+  
+  
   with NetCDFSWAN(input) as swan:
-    swan.uploadPt("hspt")
+    # swan.uploadPt(var)
+    swan.uploadPtv2(var)
+    
+    # swan.uploadPtU("hspt")
     # ntime     = swan.obj['dimensions'].get('ntime')
     # startDate = swan.obj['metadata'].get('startDate')
     # timeStep  = swan.obj['metadata'].get('timeStep(h)')
